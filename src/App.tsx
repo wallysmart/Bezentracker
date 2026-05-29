@@ -122,8 +122,8 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   
   // App views and navigation
-  // "vullen" | "prijszetting" | "volume" | "users" | "summary"
-  const [currentTab, setCurrentTab] = useState<"vullen" | "prijszetting" | "volume" | "users" | "summary">("vullen");
+  // "vullen" | "instellingen" | "users" | "summary"
+  const [currentTab, setCurrentTab] = useState<"vullen" | "instellingen" | "users" | "summary">("vullen");
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
 
   // Users registry management (Admin only)
@@ -1061,27 +1061,17 @@ export default function App() {
                         <span className="text-xs font-bold font-mono">Vulformulier</span>
                       </button>
 
-                      {/* Submenu 1 NEW: Prijszetting */}
+                      {/* Settings / Instellingen action */}
                       <button
                         type="button"
-                        onClick={() => { setCurrentTab("prijszetting"); setIsAdminMenuOpen(false); }}
-                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "prijszetting" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
+                        onClick={() => { setCurrentTab("instellingen"); setIsAdminMenuOpen(false); }}
+                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "instellingen" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
                       >
-                        <Coins className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold font-mono">Prijszetting</span>
+                        <Settings className="w-4 h-4 shrink-0" />
+                        <span className="text-xs font-bold font-mono">Instellingen</span>
                       </button>
 
-                      {/* Submenu 2 NEW: Volume correspondences */}
-                      <button
-                        type="button"
-                        onClick={() => { setCurrentTab("volume"); setIsAdminMenuOpen(false); }}
-                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "volume" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
-                      >
-                        <Scale className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold font-mono text-[10px] leading-tight">Volume Corr.</span>
-                      </button>
-
-                      {/* Submenu 3: Users registration table */}
+                      {/* Users registration table */}
                       <button
                         type="button"
                         onClick={() => { setCurrentTab("users"); setIsAdminMenuOpen(false); }}
@@ -1091,14 +1081,14 @@ export default function App() {
                         <span className="text-xs font-bold font-mono">Gebruikers</span>
                       </button>
 
-                      {/* Submenu 4: Product summary */}
+                      {/* Product summary */}
                       <button
                         type="button"
                         onClick={() => { setCurrentTab("summary"); setIsAdminMenuOpen(false); }}
-                        className={`col-span-2 p-3 rounded-xl flex items-center justify-center gap-2 text-center cursor-pointer transition-all border ${currentTab === "summary" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
+                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "summary" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
                       >
                         <BarChart3 className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold font-mono">Productoverzicht & Statistieken</span>
+                        <span className="text-xs font-bold font-mono">Overzicht</span>
                       </button>
                     </div>
                   </div>
@@ -1195,213 +1185,219 @@ export default function App() {
                 </form>
               )}
 
-              {/* TAB: Prijszetting (Submenu 1 NEW) */}
-              {currentTab === "prijszetting" && serverUser?.isAdmin && (
-                <div className="space-y-6 animate-fade-in" id="prijszetting-tab">
+              {/* TAB: Instellingen (Submenu 1 & 2 Merged) */}
+              {currentTab === "instellingen" && serverUser?.isAdmin && (
+                <div className="space-y-6 animate-fade-in" id="instellingen-tab">
+                  {/* Page Title */}
                   <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <Coins className="w-5 h-5 text-[#BE123C]" />
-                    <h3 className="font-bold text-slate-800 text-xs sm:text-sm font-mono uppercase tracking-wider">Prijszetting Beheer</h3>
+                    <Settings className="w-5 h-5 text-[#BE123C]" />
+                    <h3 className="font-bold text-slate-800 text-xs sm:text-sm font-mono uppercase tracking-wider">Instellingen Beheer</h3>
                   </div>
 
                   <div className="bg-rose-50/40 border border-rose-100/60 rounded-2xl p-4 text-xs text-slate-650 leading-normal space-y-1.5 shadow-3xs">
-                    <div className="flex items-center gap-1.5 font-bold text-rose-900">
+                    <div className="flex items-center gap-1.5 font-bold text-rose-950">
                       <Info className="w-4 h-4 text-[#BE123C]" />
-                      <span>Invoerprijzen en opbrengstbeheer</span>
-                    </div>
-                    <p className="text-[11px] text-rose-850">
-                      Stel de basisprijs per bakje in voor elk type product. Telkens wanneer een vuller producten indient, worden de totale prijzen op basis van deze waarden en de volume-correspondenties berekend en permanent geregistreerd in de database.
-                    </p>
-                  </div>
-
-                  <form onSubmit={handleSavePrices} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs">
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Groot (per bakje)</label>
-                        <div className="relative mt-1">
-                          <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            required
-                            value={prices["aardbeien groot"] !== undefined ? prices["aardbeien groot"] : ""}
-                            onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien groot": parseFloat(e.target.value) || 0 }))}
-                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Klein (per bakje)</label>
-                        <div className="relative mt-1">
-                          <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            required
-                            value={prices["aardbeien klein"] !== undefined ? prices["aardbeien klein"] : ""}
-                            onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien klein": parseFloat(e.target.value) || 0 }))}
-                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Kerstomaten (per bakje)</label>
-                        <div className="relative mt-1">
-                          <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            required
-                            value={prices["kerstomaten"] !== undefined ? prices["kerstomaten"] : ""}
-                            onChange={(e) => setPrices(prev => ({ ...prev, "kerstomaten": parseFloat(e.target.value) || 0 }))}
-                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {pricesError && (
-                      <div className="text-xs text-[#BE123C] bg-rose-50 border border-[#BE123C]/20 rounded-xl p-3 font-medium">
-                        {pricesError}
-                      </div>
-                    )}
-
-                    {pricesSuccess && (
-                      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
-                        <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
-                        Prijzen succesvol opgeslagen!
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={isSavingPrices}
-                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
-                    >
-                      {isSavingPrices ? "Opslaan..." : "Prijzen Opslaan"}
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {/* TAB: Volume correspondenties (Submenu 2 NEW) */}
-              {currentTab === "volume" && serverUser?.isAdmin && (
-                <div className="space-y-6 animate-fade-in" id="volume-correspondence-tab">
-                  <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <Scale className="w-5 h-5 text-[#BE123C]" />
-                    <h3 className="font-bold text-slate-800 text-xs sm:text-sm font-mono uppercase tracking-wider">Volume Correspondenties</h3>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-xs text-slate-650 leading-normal space-y-1.5 shadow-3xs">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                      <Info className="w-4 h-4 text-[#BE123C]" />
-                      <span>Volume-omrekeningen en eenheden configureren</span>
+                      <span>Systeemparameters, Prijzen en Volume-conversies</span>
                     </div>
                     <p className="text-[11px] text-slate-600">
-                      Hier kunt u de volume-conversies per eenheid invoeren. Het systeem gebruikt deze waarden voor statistische weergaven (gewichten in kg) en voor de juiste prijsomrekeningen bij verzending.
+                      Beheer hier zowel de basisprijzen per bakje als de volume-conversies per type eenheid. Deze waarden worden automatisch toegepast bij nieuwe invoerregistraties en dashboards.
                     </p>
                   </div>
 
-                  <form onSubmit={handleSaveCorrespondences} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs">
-                    <div className="space-y-4">
-                      <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-4">
-                        
-                        {/* kist aardbeien */}
-                        <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                          <span className="text-xs font-semibold text-slate-700">1 kist aardbeien =</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              required
-                              value={correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : ""}
-                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "kist_aardbeien_to_bakjes": parseFloat(e.target.value) || 0 }))}
-                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                            />
-                            <span className="text-xs text-slate-500 font-medium">bakjes</span>
-                          </div>
-                        </div>
+                  {/* Settings Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                        {/* doos kerstomaatjes */}
-                        <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                          <span className="text-xs font-semibold text-slate-700">1 doos kerstomaatjes =</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              required
-                              value={correspondences["doos_kerstomaten_to_bakjes"] !== undefined ? correspondences["doos_kerstomaten_to_bakjes"] : ""}
-                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "doos_kerstomaten_to_bakjes": parseFloat(e.target.value) || 0 }))}
-                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                            />
-                            <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
-                          </div>
-                        </div>
-
-                        {/* bakje aardbeien kg */}
-                        <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                          <span className="text-xs font-semibold text-slate-700">1 bakje aardbeien =</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              required
-                              value={correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : ""}
-                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_aardbeien_to_kg": parseFloat(e.target.value) || 0 }))}
-                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                            />
-                            <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
-                          </div>
-                        </div>
-
-                        {/* bakje kerstomaatjes kg */}
-                        <div className="flex items-center justify-between gap-4 py-1.5">
-                          <span className="text-xs font-semibold text-slate-700">1 bakje kerstomaatjes =</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              required
-                              value={correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : ""}
-                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
-                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                            />
-                            <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
-                          </div>
-                        </div>
-
+                    {/* Left block: Prijszetting */}
+                    <div className="space-y-4 flex flex-col h-full">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
+                        <Coins className="w-4 h-4 text-rose-650" />
+                        <span>Prijsbepaling per bakje</span>
                       </div>
+
+                      <form onSubmit={handleSavePrices} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs flex flex-col justify-between flex-1 min-h-[380px]">
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Groot (per bakje)</label>
+                            <div className="relative mt-1">
+                              <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                value={prices["aardbeien groot"] !== undefined ? prices["aardbeien groot"] : ""}
+                                onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien groot": parseFloat(e.target.value) || 0 }))}
+                                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Klein (per bakje)</label>
+                            <div className="relative mt-1">
+                              <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                value={prices["aardbeien klein"] !== undefined ? prices["aardbeien klein"] : ""}
+                                onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien klein": parseFloat(e.target.value) || 0 }))}
+                                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Kerstomaten (per bakje)</label>
+                            <div className="relative mt-1">
+                              <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                value={prices["kerstomaten"] !== undefined ? prices["kerstomaten"] : ""}
+                                onChange={(e) => setPrices(prev => ({ ...prev, "kerstomaten": parseFloat(e.target.value) || 0 }))}
+                                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 space-y-3 mt-auto">
+                          {pricesError && (
+                            <div className="text-xs text-[#BE123C] bg-rose-50 border border-[#BE123C]/20 rounded-xl p-3 font-medium">
+                              {pricesError}
+                            </div>
+                          )}
+
+                          {pricesSuccess && (
+                            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
+                              <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                              Prijzen succesvol opgeslagen!
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isSavingPrices}
+                            className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
+                          >
+                            {isSavingPrices ? "Opslaan..." : "Prijzen Opslaan"}
+                          </button>
+                        </div>
+                      </form>
                     </div>
 
-                    {correspondencesError && (
-                      <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-medium">
-                        {correspondencesError}
+                    {/* Right block: Volume Correspondenties */}
+                    <div className="space-y-4 flex flex-col h-full">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
+                        <Scale className="w-4 h-4 text-rose-650" />
+                        <span>Volume Correspondenties</span>
                       </div>
-                    )}
 
-                    {correspondencesSuccess && (
-                      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
-                        <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
-                        Correspondenties succesvol opgeslagen!
-                      </div>
-                    )}
+                      <form onSubmit={handleSaveCorrespondences} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs flex flex-col justify-between flex-1 min-h-[380px]">
+                        <div className="space-y-4">
+                          <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-4">
+                            
+                            {/* kist aardbeien */}
+                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                              <span className="text-xs font-semibold text-slate-700">1 kist aardbeien =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  required
+                                  value={correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "kist_aardbeien_to_bakjes": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
+                              </div>
+                            </div>
 
-                    <button
-                      type="submit"
-                      disabled={isSavingCorrespondences}
-                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
-                    >
-                      {isSavingCorrespondences ? "Opslaan..." : "Correspondenties Opslaan"}
-                    </button>
-                  </form>
+                            {/* doos kerstomaatjes */}
+                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                              <span className="text-xs font-semibold text-slate-700">1 doos kerstomaatjes =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  required
+                                  value={correspondences["doos_kerstomaten_to_bakjes"] !== undefined ? correspondences["doos_kerstomaten_to_bakjes"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "doos_kerstomaten_to_bakjes": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
+                              </div>
+                            </div>
+
+                            {/* bakje aardbeien kg */}
+                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                              <span className="text-xs font-semibold text-slate-700">1 bakje aardbeien =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  required
+                                  value={correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_aardbeien_to_kg": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                              </div>
+                            </div>
+
+                            {/* bakje kerstomaatjes kg */}
+                            <div className="flex items-center justify-between gap-4 py-1.5">
+                              <span className="text-xs font-semibold text-slate-700">1 bakje kerstomaatjes =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  required
+                                  value={correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+
+                        <div className="pt-4 space-y-3 mt-auto">
+                          {correspondencesError && (
+                            <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-medium">
+                              {correspondencesError}
+                            </div>
+                          )}
+
+                          {correspondencesSuccess && (
+                            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
+                              <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                              Correspondenties succesvol opgeslagen!
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isSavingCorrespondences}
+                            className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
+                          >
+                            {isSavingCorrespondences ? "Opslaan..." : "Conversies Opslaan"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                  </div>
                 </div>
               )}
 
@@ -1506,12 +1502,12 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* MODULE B: EXHAUSTIVE ADMIN LIST (Loaded from connected spreadsheet OneDrive) */}
+                  {/* MODULE B: EXHAUSTIVE ADMIN LIST */}
                   <div className="space-y-4 pt-5 border-t border-slate-100">
                     <div className="space-y-1">
-                      <h4 className="text-[10px] font-bold px-1 uppercase tracking-wider text-slate-400 font-mono">Lijst van Beheerders (OneDrive excel)</h4>
+                      <h4 className="text-[10px] font-bold px-1 uppercase tracking-wider text-slate-400 font-mono">Lijst van Beheerders</h4>
                       <p className="text-[10px] text-slate-400 font-medium px-1 leading-normal">
-                        Admins hebben toegang tot het hamburgerpaneel om gebruikers goed te keuren en OneDrive-servers in te stellen.
+                        Admins hebben toegang tot het hamburgerpaneel om gebruikers goed te keuren.
                       </p>
                     </div>
 

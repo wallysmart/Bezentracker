@@ -73,9 +73,8 @@ async function fetchPredictedTemperature(dutchDate: string): Promise<number | nu
       const idx = data.daily.time.indexOf(targetDateStr);
       if (idx !== -1) {
         const tMax = data.daily.temperature_2m_max[idx];
-        const tMin = data.daily.temperature_2m_min[idx];
-        if (tMax !== undefined && tMin !== undefined) {
-          return Math.round(((tMax + tMin) / 2) * 10) / 10;
+        if (tMax !== undefined) {
+          return tMax; // Expected maximum daily temperature
         }
       }
     }
@@ -427,6 +426,17 @@ async function startServer() {
     }
   });
 
+  // DELETE all records (for clearing database)
+  app.post("/api/admin/clear-all", (req, res) => {
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2), "utf-8");
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error clearing all records:", error);
+      res.status(500).json({ error: "Fout bij het leegmaken van de database" });
+    }
+  });
+
   // GET prices
   app.get("/api/admin/prices", (req, res) => {
     try {
@@ -489,13 +499,17 @@ async function startServer() {
       // Excel-friendly CSV with BOM for UTF-8 and Dutch semicolon separators (Excel in Europe uses semicolon for CSV if decimal point is comma)
       // We will define 'sep=;' at the top of the file so Excel understands the separator immediately!
       let csvContent = "sep=;\r\n";
-      csvContent += "Invoerder;Datum;Tijd;Producttype;Aantal\r\n";
+      csvContent += "Invoerder;Datum;Tijd;Producttype;Aantal;Max Temp;Prijs per stuk;Totaalinvoer\r\n";
 
       records.forEach((r) => {
         // Escape semicolons and double quotes in inputterName
-        const escapedName = `"${r.inputterName.replace(/"/g, '""')}"`;
-        const escapedProductType = `"${r.productType.replace(/"/g, '""')}"`;
-        csvContent += `${escapedName};${r.inputDate};${r.inputTime};${escapedProductType};${r.productQuantity}\r\n`;
+        const escapedName = `"${r.inputterName ? r.inputterName.replace(/"/g, '""') : ""}"`;
+        const escapedProductType = `"${r.productType ? r.productType.replace(/"/g, '""') : ""}"`;
+        const tempVal = r.predictedTemperature !== undefined && r.predictedTemperature !== null ? `${r.predictedTemperature}°C` : "";
+        const uPrice = r.unitPrice !== undefined && r.unitPrice !== null ? `€ ${Number(r.unitPrice).toFixed(2).replace(/\./g, ",")}` : "";
+        const tPrice = r.totalPrice !== undefined && r.totalPrice !== null ? `€ ${Number(r.totalPrice).toFixed(2).replace(/\./g, ",")}` : "";
+        
+        csvContent += `${escapedName};${r.inputDate};${r.inputTime};${escapedProductType};${r.productQuantity};${tempVal};${uPrice};${tPrice}\r\n`;
       });
 
       // Send with UTF-8 BOM

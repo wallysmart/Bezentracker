@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { 
   BarChart3, 
   Calendar, 
@@ -9,13 +10,15 @@ import {
   RefreshCw, 
   Search, 
   Trash2, 
+  Download, 
   TrendingUp, 
   X,
   User,
   ShoppingBag,
   ArrowRight,
   Info,
-  CalendarDays
+  CalendarDays,
+  AlertTriangle
 } from "lucide-react";
 import { 
   AreaChart, 
@@ -71,6 +74,44 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
   // View state: "dashboard" (graph) or "database" (table)
   const [viewMode, setViewMode] = useState<"dashboard" | "database">("dashboard");
 
+  // Custom Delete confirmation modal state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<{ id: string; details: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Custom Clear Database states
+  const [clearStep, setClearStep] = useState<0 | 1 | 2>(0); // 0 = closed, 1 = first warning, 2 = written confirmation
+  const [clearWord, setClearWord] = useState("");
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+
+  const handleClearAllDatabase = async () => {
+    if (clearStep === 2 && clearWord !== "WISSEN") {
+      setClearError("Type a.u.b. exact het woord 'WISSEN' om door te gaan.");
+      return;
+    }
+    setIsClearing(true);
+    setClearError(null);
+    try {
+      const res = await fetch("/api/admin/clear-all", {
+        method: "POST"
+      });
+      if (res.ok) {
+        setClearStep(0);
+        setClearWord("");
+        await fetchRecords(); // Refresh data
+      } else {
+        const err = await res.json();
+        setClearError(err.error || "Fout bij leegmaken van de database.");
+      }
+    } catch (err) {
+      setClearError("Fout bij verbinding met de server.");
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   // Filter states for complete database table view
   const [tableFilterFiller, setTableFilterFiller] = useState("");
   const [tableFilterProduct, setTableFilterProduct] = useState("");
@@ -117,26 +158,40 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
       .catch(e => console.error("Fout bij ophalen van correspondenties:", e));
   }, []);
 
-  // Handle record deletion
-  const handleDeleteRecord = async (id: string, detailString: string) => {
-    if (!confirm(`Weet u zeker dat u dit record wilt verwijderen?\n\n${detailString}`)) {
-      return;
-    }
+  // Trigger delete confirmation modal
+  const promptDeleteRecord = (id: string, details: string) => {
+    setRecordToDelete({ id, details });
+    setDeleteError(null);
+    setDeleteConfirmOpen(true);
+  };
+
+  const executeDeleteRecord = async () => {
+    if (!recordToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
 
     try {
-      const res = await fetch(`/api/records/${id}`, {
+      const res = await fetch(`/api/records/${recordToDelete.id}`, {
         method: "DELETE"
       });
       if (res.ok) {
-        // Optimistic / Real reload
-        setRecords(prev => prev.filter(r => r.id !== id));
+        setRecords(prev => prev.filter(r => r.id !== recordToDelete.id));
+        setDeleteConfirmOpen(false);
+        setRecordToDelete(null);
       } else {
         const errData = await res.json();
-        alert(errData.error || "Fout bij het verwijderen van record.");
+        setDeleteError(errData.error || "Fout bij het verwijderen van record.");
       }
     } catch (e) {
-      alert("Fout bij het verwijderen van record.");
+      setDeleteError("Fout bij verbinding met de server.");
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  // Handle record deletion
+  const handleDeleteRecord = (id: string, detailString: string) => {
+    promptDeleteRecord(id, detailString);
   };
 
   // Get unique lists of properties for filtering
@@ -748,12 +803,44 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                 </div>
               </div>
 
-              {/* Table Result Counters */}
-              <div className="flex justify-between items-center text-[10px] font-mono font-semibold px-1 text-slate-500">
-                <span>Gevonden: {filteredDatabaseRecords.length} records</span>
-                {filteredDatabaseRecords.length > 0 && (
-                  <span>Pagina {tablePage} van {totalPages}</span>
-                )}
+              {/* Table Result Counters and Action Buttons */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1 text-slate-500">
+                <div className="flex items-center gap-4 text-[10px] font-mono font-semibold">
+                  <span>Gevonden: {filteredDatabaseRecords.length} records</span>
+                  {filteredDatabaseRecords.length > 0 && (
+                    <span>Pagina {tablePage} van {totalPages}</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  {/* Download CSV Button */}
+                  <a
+                    href="/api/export"
+                    download="verkoopautomaat_geschiedenis.csv"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100/75 text-xs font-bold font-mono shadow-5xs transition-colors decoration-transparent"
+                    title="Exporteer en download database als CSV"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span>Download CSV</span>
+                  </a>
+
+                  {/* Clear All Data Button */}
+                  {serverUser?.isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClearStep(1);
+                        setClearWord("");
+                        setClearError(null);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100/75 text-xs font-bold font-mono shadow-5xs transition-colors cursor-pointer"
+                      title="Wis de volledige database"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Wis Database</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Content representation */}
@@ -777,7 +864,7 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                           <th className="py-2.5 px-2">Vuller</th>
                           <th className="py-2.5 px-2">Producttype</th>
                           <th className="py-2.5 px-2 text-right">Aantal</th>
-                          <th className="py-2.5 px-2 text-right">Temp</th>
+                          <th className="py-2.5 px-2 text-right cursor-help text-[#BE123C] font-semibold" title="Verwachte maximale dagtemperatuur in Duffel, België">Max Temp</th>
                           <th className="py-2.5 px-2 text-right">Prijs/u</th>
                           <th className="py-2.5 px-2 text-right">Totaal</th>
                           <th className="py-2.5 px-3 text-center">Actie</th>
@@ -848,8 +935,8 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
 
                           <div className="flex items-center gap-1.5 flex-wrap py-0.5 font-mono text-[9px]">
                             {r.predictedTemperature !== undefined && r.predictedTemperature !== null && (
-                              <span className="bg-amber-50 text-amber-700 border border-amber-200/50 px-1 px-0.5 rounded font-bold">
-                                ☀️ {r.predictedTemperature}°C
+                              <span className="bg-amber-50 text-amber-700 border border-amber-200/50 px-1.5 py-0.5 rounded font-bold cursor-help" title="Verwachte maximale dagtemperatuur in Duffel, België">
+                                ☀️ Max {r.predictedTemperature}°C
                               </span>
                             )}
                             {r.totalPrice !== undefined && r.totalPrice !== null && (
@@ -935,6 +1022,211 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
           )}
         </>
       )}
+
+      {/* Dynamic React Delete Confirmation Dialog Modal */}
+      <AnimatePresence>
+        {deleteConfirmOpen && recordToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Dark glass backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { if (!isDeleting) setDeleteConfirmOpen(false); }}
+              className="fixed inset-0 bg-slate-950/45 backdrop-blur-xs"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 12 }}
+              transition={{ type: "spring", duration: 0.35 }}
+              className="bg-white rounded-3xl shadow-xl w-full max-w-sm overflow-hidden border border-slate-100 z-10 flex flex-col"
+            >
+              {/* Header with warm/crimson alerts */}
+              <div className="bg-[#BE123C] text-white p-5 relative">
+                <div className="absolute right-4 top-4 text-rose-950 opacity-20">
+                  <AlertTriangle className="w-16 h-16 stroke-[1]" />
+                </div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-rose-200 font-mono">
+                  Beheer actie
+                </p>
+                <h3 className="text-lg font-bold mt-0.5">
+                  Record Verwijderen?
+                </h3>
+              </div>
+
+              {/* Description contents */}
+              <div className="p-5 space-y-4 col-span-1">
+                <p className="text-xs text-slate-500 leading-normal">
+                  Weet u zeker dat u deze invoer permanent wilt verwijderen uit de database? Deze actie kan niet ongedaan worden gemaakt.
+                </p>
+
+                <div className="bg-slate-50 border border-slate-100/85 p-3.5 rounded-xl text-left space-y-1.5 font-mono text-[11px] text-slate-700">
+                  <p className="font-bold text-slate-500 text-[10px] uppercase tracking-wider mb-1">Invoer details:</p>
+                  <p className="whitespace-pre-wrap">{recordToDelete.details}</p>
+                </div>
+
+                {deleteError && (
+                  <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-semibold">
+                    {deleteError}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="p-5 bg-slate-50/80 border-t border-slate-100 flex gap-3">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setDeleteConfirmOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-100 hover:text-slate-800 transition-all text-xs cursor-pointer active:scale-98 disabled:opacity-50"
+                >
+                  Annuleren
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={executeDeleteRecord}
+                  className="flex-1 py-2.5 rounded-xl bg-[#BE123C] hover:bg-[#9F1239] text-white font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 disabled:opacity-50"
+                >
+                  {isDeleting ? "Verwijderen..." : "Definitief Wissen"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Clear Database Dual Confirmation Modal */}
+      <AnimatePresence>
+        {clearStep > 0 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Dark glass backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { if (!isClearing) setClearStep(0); }}
+              className="fixed inset-0 bg-slate-950/45 backdrop-blur-xs"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 12 }}
+              transition={{ type: "spring", duration: 0.35 }}
+              className="bg-white rounded-3xl shadow-xl w-full max-w-sm overflow-hidden border border-slate-100 z-10 flex flex-col"
+            >
+              {/* Header with crimson background */}
+              <div className="bg-[#BE123C] text-white p-5 relative">
+                <div className="absolute right-4 top-4 text-rose-950 opacity-20">
+                  <AlertTriangle className="w-16 h-16 stroke-[1]" />
+                </div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-rose-200 font-mono">
+                  Systeem actie
+                </p>
+                <h3 className="text-lg font-bold mt-0.5">
+                  Database Leegmaken
+                </h3>
+              </div>
+
+              {/* Step 1: First Confirmation */}
+              {clearStep === 1 && (
+                <div className="p-5 space-y-4 flex-1">
+                  <div className="p-3 bg-rose-50 border border-rose-100/80 rounded-2xl flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-[#BE123C] shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-rose-950">Waarschuwing</p>
+                      <p className="text-[11px] text-rose-800 leading-normal mt-0.5">
+                        U staat op het punt de volledige database leeg te maken. Alle geregistreerde records, statistieken en vullingen gaan definitief verloren.
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-550 leading-normal">
+                    Weet u absoluut zeker dat u wilt doorgaan met het leegmaken van de database? Dit kan niet ongedaan worden gemaakt.
+                  </p>
+
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setClearStep(0)}
+                      className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-100 hover:text-slate-850 transition-all text-xs cursor-pointer text-center"
+                    >
+                      Annuleren
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClearStep(2)}
+                      className="flex-1 py-2.5 rounded-xl bg-[#BE123C] hover:bg-[#9F1239] text-white font-bold transition-all text-xs text-center cursor-pointer"
+                    >
+                      Ja, ga verder
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Final Confirmation (Input typed keyword 'WISSEN') */}
+              {clearStep === 2 && (
+                <div className="p-5 space-y-4 flex-1">
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5 animate-pulse" />
+                    <div>
+                      <p className="text-xs font-black text-red-950">LAATSTE WAARSCHUWING</p>
+                      <p className="text-[11px] text-red-800 leading-normal mt-0.5">
+                        Dit is een onomkeerbare systeemactie. Typ exact het woord <span className="font-mono font-bold bg-white px-1 py-0.5 rounded border border-red-200 text-red-700 select-all">WISSEN</span> hieronder om de database permanent te wissen.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 font-mono">Typ WISSEN ter bevestiging</label>
+                    <input
+                      type="text"
+                      value={clearWord}
+                      required
+                      placeholder="Typ WISSEN"
+                      onChange={(e) => {
+                        setClearWord(e.target.value);
+                        setClearError(null);
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-[#BE123C] rounded-xl py-2 px-3.5 text-xs font-bold font-mono text-slate-800 uppercase tracking-widest outline-none transition-colors"
+                    />
+                  </div>
+
+                  {clearError && (
+                    <p className="text-[11px] font-bold text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 leading-normal">
+                      {clearError}
+                    </p>
+                  )}
+
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      disabled={isClearing}
+                      onClick={() => setClearStep(0)}
+                      className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-100 hover:text-slate-850 transition-all text-xs cursor-pointer text-center disabled:opacity-40"
+                    >
+                      Annuleren
+                    </button>
+                    <button
+                      type="button"
+                      disabled={clearWord !== "WISSEN" || isClearing}
+                      onClick={handleClearAllDatabase}
+                      className="flex-1 py-2.5 rounded-xl bg-[#BE123C] hover:bg-[#9F1239] text-white font-bold transition-all text-xs text-center cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed uppercase font-mono tracking-wider shadow-5xs"
+                    >
+                      {isClearing ? "Wissen..." : "JA, WIS ALLES"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
