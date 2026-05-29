@@ -7,6 +7,9 @@ export interface RecordRow {
   productQuantity: number;
   timestamp: number;
   userEmail: string;
+  unitPrice?: number;
+  totalPrice?: number;
+  predictedTemperature?: number | null;
 }
 
 export interface ProductInput {

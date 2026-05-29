@@ -26,7 +26,9 @@ import {
   Mail,
   UserX,
   Eye,
-  EyeOff
+  EyeOff,
+  Coins,
+  Scale
 } from "lucide-react";
 import { 
   onAuthStateChanged, 
@@ -120,8 +122,8 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   
   // App views and navigation
-  // "vullen" | "cloud" | "users" | "summary"
-  const [currentTab, setCurrentTab] = useState<"vullen" | "cloud" | "users" | "summary">("vullen");
+  // "vullen" | "prijszetting" | "volume" | "users" | "summary"
+  const [currentTab, setCurrentTab] = useState<"vullen" | "prijszetting" | "volume" | "users" | "summary">("vullen");
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
 
   // Users registry management (Admin only)
@@ -134,22 +136,25 @@ export default function App() {
   const [currentDate, setCurrentDate] = useState("");
   const [currentTime, setCurrentTime] = useState("");
   
-  // OneDrive Central Integration States
-  const [odStatus, setOdStatus] = useState<{
-    isConfigured: boolean;
-    isEnvConfigured?: boolean;
-    isConnected: boolean;
-    clientId: string;
-    userEmail: string;
-    userName: string;
-    redirectUri: string;
-  } | null>(null);
+  // Prices and volume correspondences states (Admin only)
+  const [prices, setPrices] = useState<Record<string, number>>({
+    "aardbeien groot": 4.5,
+    "aardbeien klein": 3.0,
+    "kerstomaten": 2.5
+  });
+  const [isSavingPrices, setIsSavingPrices] = useState(false);
+  const [pricesError, setPricesError] = useState<string | null>(null);
+  const [pricesSuccess, setPricesSuccess] = useState(false);
 
-  const [odClientId, setOdClientId] = useState("");
-  const [odClientSecret, setOdClientSecret] = useState("");
-  const [isSavingConfig, setIsSavingConfig] = useState(false);
-  const [odConfigSaveSuccess, setOdConfigSaveSuccess] = useState(false);
-  const [odConfigError, setOdConfigError] = useState<string | null>(null);
+  const [correspondences, setCorrespondences] = useState<Record<string, number>>({
+    "kist_aardbeien_to_bakjes": 10.0,
+    "doos_kerstomaten_to_bakjes": 10.0,
+    "bakje_aardbeien_to_kg": 0.5,
+    "bakje_kerstomaten_to_kg": 0.5
+  });
+  const [isSavingCorrespondences, setIsSavingCorrespondences] = useState(false);
+  const [correspondencesError, setCorrespondencesError] = useState<string | null>(null);
+  const [correspondencesSuccess, setCorrespondencesSuccess] = useState(false);
   
   // Modals & UI States
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -257,33 +262,27 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch OneDrive central connection status
-  const fetchOneDriveStatus = async () => {
+  // Fetch local prices and volume correspondences
+  const fetchPricesAndCorrespondences = async () => {
     try {
-      const res = await fetch("/api/onedrive/status");
-      if (res.ok) {
-        const data = await res.json();
-        setOdStatus(data);
-        if (data.clientId) {
-          setOdClientId(data.clientId);
-        }
+      const resP = await fetch("/api/admin/prices");
+      if (resP.ok) {
+        const pData = await resP.json();
+        setPrices(pData);
+      }
+      const resC = await fetch("/api/correspondences");
+      if (resC.ok) {
+        const cData = await resC.json();
+        setCorrespondences(cData);
       }
     } catch (e) {
-      console.error("Fout bij ophalen van OneDrive status:", e);
+      console.error("Fout bij ophalen van prijzen of volume-correspondenties:", e);
     }
   };
 
   useEffect(() => {
-    fetchOneDriveStatus();
-
-    // Check if redirected from Microsoft OAuth with success params
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("onedrive_success") === "true") {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      setShowSuccessToast(true);
-      setTimeout(() => setShowSuccessToast(false), 4000);
-    }
-  }, []);
+    fetchPricesAndCorrespondences();
+  }, [currentTab, serverUser]);
 
   // Fetch admin and user registries (Admin tab only)
   const fetchUsersAndAdmins = async () => {
@@ -440,56 +439,62 @@ export default function App() {
     }
   };
 
-  const handleSaveOdConfig = async (e: React.FormEvent) => {
+  const handleSavePrices = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSavingConfig(true);
-    setOdConfigError(null);
-    setOdConfigSaveSuccess(false);
-
+    if (!serverUser) return;
+    setIsSavingPrices(true);
+    setPricesError(null);
+    setPricesSuccess(false);
     try {
-      const res = await fetch("/api/onedrive/config", {
-         method: "POST",
-         headers: {
-           "Content-Type": "application/json"
-         },
-         body: JSON.stringify({
-           clientId: odClientId,
-           clientSecret: odClientSecret
-         })
+      const res = await fetch("/api/admin/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminEmail: serverUser.email,
+          prices
+        })
       });
-
       if (res.ok) {
-        setOdConfigSaveSuccess(true);
-        setOdClientSecret(""); // Clear secret for safety
-        await fetchOneDriveStatus();
-        setTimeout(() => setOdConfigSaveSuccess(false), 3000);
+        setPricesSuccess(true);
+        setTimeout(() => setPricesSuccess(false), 3000);
       } else {
         const data = await res.json();
-        setOdConfigError(data.error || "Fout bij opslaan van OneDrive configuratie.");
+        setPricesError(data.error || "Fout bij opslaan van prijzen.");
       }
-    } catch (err: any) {
-      setOdConfigError("Kan geen verbinding maken met de server.");
+    } catch (err) {
+      setPricesError("Kan geen verbinding maken met de server.");
     } finally {
-      setIsSavingConfig(false);
+      setIsSavingPrices(false);
     }
   };
 
-  const handleDisconnectOd = async () => {
-    if (!confirm("Weet u zeker dat u de OneDrive-koppeling wilt verbreken? Nieuwe invoer zal niet meer naar Excel worden geschreven.")) {
-      return;
-    }
+  const handleSaveCorrespondences = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!serverUser) return;
+    setIsSavingCorrespondences(true);
+    setCorrespondencesError(null);
+    setCorrespondencesSuccess(false);
     try {
-      const res = await fetch("/api/onedrive/disconnect", { method: "POST" });
+      const res = await fetch("/api/admin/correspondences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminEmail: serverUser.email,
+          correspondences: correspondences
+        })
+      });
       if (res.ok) {
-        await fetchOneDriveStatus();
+        setCorrespondencesSuccess(true);
+        setTimeout(() => setCorrespondencesSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        setCorrespondencesError(data.error || "Fout bij opslaan van correspondenties.");
       }
-    } catch (e) {
-      console.error("Fout bij verbreken OneDrive verbinding:", e);
+    } catch (err) {
+      setCorrespondencesError("Kan geen verbinding maken met de server.");
+    } finally {
+      setIsSavingCorrespondences(false);
     }
-  };
-
-  const handleConnectOdRedirect = () => {
-    window.location.href = "/api/onedrive/auth";
   };
 
   // Sync date and time
@@ -1053,37 +1058,47 @@ export default function App() {
                         className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "vullen" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
                       >
                         <Home className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold">Vulformulier</span>
+                        <span className="text-xs font-bold font-mono">Vulformulier</span>
                       </button>
 
-                      {/* Submenu 1: OneDrive cloud config connection details */}
+                      {/* Submenu 1 NEW: Prijszetting */}
                       <button
                         type="button"
-                        onClick={() => { setCurrentTab("cloud"); setIsAdminMenuOpen(false); }}
-                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "cloud" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
+                        onClick={() => { setCurrentTab("prijszetting"); setIsAdminMenuOpen(false); }}
+                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "prijszetting" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
                       >
-                        <Cloud className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold">Cloud Con.</span>
+                        <Coins className="w-4 h-4 shrink-0" />
+                        <span className="text-xs font-bold font-mono">Prijszetting</span>
                       </button>
 
-                      {/* Submenu 2: Users registration table */}
+                      {/* Submenu 2 NEW: Volume correspondences */}
+                      <button
+                        type="button"
+                        onClick={() => { setCurrentTab("volume"); setIsAdminMenuOpen(false); }}
+                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "volume" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
+                      >
+                        <Scale className="w-4 h-4 shrink-0" />
+                        <span className="text-xs font-bold font-mono text-[10px] leading-tight">Volume Corr.</span>
+                      </button>
+
+                      {/* Submenu 3: Users registration table */}
                       <button
                         type="button"
                         onClick={() => { setCurrentTab("users"); setIsAdminMenuOpen(false); }}
                         className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "users" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
                       >
                         <Users className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold">Gebruikers</span>
+                        <span className="text-xs font-bold font-mono">Gebruikers</span>
                       </button>
 
-                      {/* Submenu 3: Product summary (empty placeholder view) */}
+                      {/* Submenu 4: Product summary */}
                       <button
                         type="button"
                         onClick={() => { setCurrentTab("summary"); setIsAdminMenuOpen(false); }}
-                        className={`p-3 rounded-xl flex items-center gap-2 text-left cursor-pointer transition-all border ${currentTab === "summary" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
+                        className={`col-span-2 p-3 rounded-xl flex items-center justify-center gap-2 text-center cursor-pointer transition-all border ${currentTab === "summary" ? "bg-[#BE123C] border-[#BE123C] text-white" : "bg-slate-850 border-slate-700/40 hover:bg-slate-800 text-slate-300"}`}
                       >
                         <BarChart3 className="w-4 h-4 shrink-0" />
-                        <span className="text-xs font-bold">Productoverzicht</span>
+                        <span className="text-xs font-bold font-mono">Productoverzicht & Statistieken</span>
                       </button>
                     </div>
                   </div>
@@ -1098,21 +1113,6 @@ export default function App() {
               {currentTab === "vullen" && (
                 <form onSubmit={handlePreSubmit} className="space-y-3.5 sm:space-y-6" id="vending-submission-form">
                   
-                  {/* OneDrive warning banner if disconnected */}
-                  {odStatus && !odStatus.isConnected && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-1 shadow-2xs">
-                      <div className="flex items-start gap-2.5">
-                        <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
-                        <div>
-                          <h4 className="font-bold text-[10px] text-[#78350F] uppercase tracking-wider font-mono">OneDrive Database Verbinding Offline</h4>
-                          <p className="text-[10px] text-amber-800 leading-tight mt-0.5">
-                            De centrale cloud-opslag is offline. Vraag een beheerder om OneDrive te activeren via het hoofdmenu.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Vuller Identity state */}
                   <div className="space-y-2 bg-white p-3.5 rounded-xl border border-slate-100 shadow-3xs">
                     <div className="flex items-center justify-between">
@@ -1195,145 +1195,213 @@ export default function App() {
                 </form>
               )}
 
-              {/* TAB 2: Cloud Connection (Submenu 1) */}
-              {currentTab === "cloud" && serverUser?.isAdmin && (
-                <div className="space-y-6" id="cloud-connection-tab">
+              {/* TAB: Prijszetting (Submenu 1 NEW) */}
+              {currentTab === "prijszetting" && serverUser?.isAdmin && (
+                <div className="space-y-6 animate-fade-in" id="prijszetting-tab">
                   <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <Cloud className="w-5 h-5 text-[#BE123C]" />
-                    <h3 className="font-bold text-slate-800 text-sm font-mono uppercase tracking-wider">OneDrive Koppeling Status</h3>
+                    <Coins className="w-5 h-5 text-[#BE123C]" />
+                    <h3 className="font-bold text-slate-800 text-xs sm:text-sm font-mono uppercase tracking-wider">Prijszetting Beheer</h3>
                   </div>
 
-                  {/* Connectivity Details Card */}
-                  <div className={`p-4 rounded-2xl border ${odStatus?.isConnected ? "bg-emerald-50/50 border-emerald-100 text-emerald-800" : "bg-amber-50/50 border-amber-100"}`}>
-                    <div className="flex items-start gap-3">
-                      {odStatus?.isConnected ? (
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                          <Check className="w-4.5 h-4.5 stroke-[2.5]" />
-                        </div>
-                      ) : (
-                        <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
-                          <AlertTriangle className="w-4.5 h-4.5 stroke-[2.5]" />
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-wider font-mono text-slate-500">Verbindingsstatus</p>
-                        <p className="text-xs font-semibold mt-0.5">
-                          {odStatus?.isConnected 
-                            ? `Verbonden met: ${odStatus.userName || "Microsoft Account"}` 
-                            : "OneDrive is momenteel niet gekoppeld"}
-                        </p>
-                        {odStatus?.userEmail && (
-                          <p className="text-[10px] text-emerald-600 font-semibold font-mono mt-0.5 select-all">{odStatus.userEmail}</p>
-                        )}
-                      </div>
+                  <div className="bg-rose-50/40 border border-rose-100/60 rounded-2xl p-4 text-xs text-slate-650 leading-normal space-y-1.5 shadow-3xs">
+                    <div className="flex items-center gap-1.5 font-bold text-rose-900">
+                      <Info className="w-4 h-4 text-[#BE123C]" />
+                      <span>Invoerprijzen en opbrengstbeheer</span>
                     </div>
+                    <p className="text-[11px] text-rose-850">
+                      Stel de basisprijs per bakje in voor elk type product. Telkens wanneer een vuller producten indient, worden de totale prijzen op basis van deze waarden en de volume-correspondenties berekend en permanent geregistreerd in de database.
+                    </p>
                   </div>
 
-                  {odStatus?.isEnvConfigured ? (
-                    <div className="bg-emerald-50/40 border border-emerald-100/60 rounded-2xl p-4 text-xs text-emerald-800 leading-normal space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-emerald-900">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
-                        <span>Microsoft Client Credentials Beveiligd</span>
-                      </div>
-                      <p className="text-[11px] text-emerald-700/90 leading-normal">
-                        De Microsoft Active Directory Client-ID en Client-Secret zijn door de beheerder veilig geconfigureerd in de backend-server. Deze zijn onleesbaar voor client-scripts en optimaal beveiligd.
-                      </p>
-                    </div>
-                  ) : (
+                  <form onSubmit={handleSavePrices} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs">
                     <div className="space-y-4">
-                      {/* Configuration Instruction */}
-                      {!odStatus?.isConnected && (
-                        <div className="bg-slate-50 rounded-2xl p-4 text-xs text-slate-650 leading-normal space-y-2 border border-slate-100">
-                          <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                            <Info className="w-4 h-4 text-[#BE123C]" />
-                            <span>Hoe kunt u handmatig koppelen?</span>
-                          </div>
-                          <p>1. Registreer een nieuwe App op het Azure Portal.</p>
-                          <p>2. Gebruik onderstaande <strong>Redirect URI</strong>:</p>
-                          <p className="bg-slate-100 p-2 rounded-lg font-mono text-[10px] select-all break-all border border-slate-200">
-                            {odStatus?.redirectUri || "Wacht op server..."}
-                          </p>
-                          <p>3. Machtig de scopes: <code>offline_access</code> en <code>Files.ReadWrite</code>.</p>
-                          <p>4. Voer de Client ID en Client Secret hieronder in:</p>
-                        </div>
-                      )}
-
-                      {/* Config Form */}
-                      <form onSubmit={handleSaveOdConfig} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs">
-                        <div className="space-y-1">
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Microsoft Client ID</label>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Groot (per bakje)</label>
+                        <div className="relative mt-1">
+                          <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
                           <input
-                            type="text"
+                            type="number"
+                            step="0.01"
+                            min="0"
                             required
-                            value={odClientId}
-                            onChange={(e) => setOdClientId(e.target.value)}
-                            placeholder="e9b24cd5-4f4d-4ba6-..."
-                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2.5 px-3.5 text-xs text-slate-800 placeholder-slate-400 font-mono focus:outline-none focus:border-[#BE123C]"
+                            value={prices["aardbeien groot"] !== undefined ? prices["aardbeien groot"] : ""}
+                            onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien groot": parseFloat(e.target.value) || 0 }))}
+                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
                           />
                         </div>
+                      </div>
 
-                        <div className="space-y-1">
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">
-                            {odStatus?.isConfigured ? "Client Secret (Alleen invullen voor wijzigen)" : "Microsoft Client Secret"}
-                          </label>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Klein (per bakje)</label>
+                        <div className="relative mt-1">
+                          <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
                           <input
-                            type="password"
-                            required={!odStatus?.isConfigured}
-                            value={odClientSecret}
-                            onChange={(e) => setOdClientSecret(e.target.value)}
-                            placeholder={odStatus?.isConfigured ? "••••••••••••••••••••" : "Voer uw Client Secret in..."}
-                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2.5 px-3.5 text-xs text-[#1E293B] placeholder-slate-400 font-mono focus:outline-none focus:border-[#BE123C]"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={prices["aardbeien klein"] !== undefined ? prices["aardbeien klein"] : ""}
+                            onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien klein": parseFloat(e.target.value) || 0 }))}
+                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
                           />
                         </div>
+                      </div>
 
-                        {odConfigError && (
-                          <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-medium">
-                            {odConfigError}
-                          </div>
-                        )}
-
-                        {odConfigSaveSuccess && (
-                          <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium">
-                            Configuratie succesvol opgeslagen!
-                          </div>
-                        )}
-
-                        <button
-                          type="submit"
-                          disabled={isSavingConfig || !odClientId}
-                          className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40"
-                        >
-                          {isSavingConfig ? "Opslaan..." : "App Gegevens Opslaan"}
-                        </button>
-                      </form>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Kerstomaten (per bakje)</label>
+                        <div className="relative mt-1">
+                          <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={prices["kerstomaten"] !== undefined ? prices["kerstomaten"] : ""}
+                            onChange={(e) => setPrices(prev => ({ ...prev, "kerstomaten": parseFloat(e.target.value) || 0 }))}
+                            className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
+                          />
+                        </div>
+                      </div>
                     </div>
-                  )}
 
-                  {/* Auth trigger redirect */}
-                  {odStatus?.isConfigured && (
-                    <div className="pt-4 border-t border-slate-100 space-y-3">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Centrale Account Machtigen</p>
-                      
-                      {!odStatus.isConnected ? (
-                        <button
-                          type="button"
-                          onClick={handleConnectOdRedirect}
-                          className="w-full py-3 rounded-xl bg-[#BE123C] hover:bg-[#9F1239] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-98"
-                        >
-                          <Cloud className="w-4 h-4 shrink-0" />
-                          Aanmelden met Microsoft OneDrive
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleDisconnectOd}
-                          className="w-full py-2.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-[#BE123C] font-semibold text-xs transition-all cursor-pointer"
-                        >
-                          OneDrive-koppeling verbreken
-                        </button>
-                      )}
+                    {pricesError && (
+                      <div className="text-xs text-[#BE123C] bg-rose-50 border border-[#BE123C]/20 rounded-xl p-3 font-medium">
+                        {pricesError}
+                      </div>
+                    )}
+
+                    {pricesSuccess && (
+                      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
+                        <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                        Prijzen succesvol opgeslagen!
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSavingPrices}
+                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
+                    >
+                      {isSavingPrices ? "Opslaan..." : "Prijzen Opslaan"}
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB: Volume correspondenties (Submenu 2 NEW) */}
+              {currentTab === "volume" && serverUser?.isAdmin && (
+                <div className="space-y-6 animate-fade-in" id="volume-correspondence-tab">
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                    <Scale className="w-5 h-5 text-[#BE123C]" />
+                    <h3 className="font-bold text-slate-800 text-xs sm:text-sm font-mono uppercase tracking-wider">Volume Correspondenties</h3>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-xs text-slate-650 leading-normal space-y-1.5 shadow-3xs">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                      <Info className="w-4 h-4 text-[#BE123C]" />
+                      <span>Volume-omrekeningen en eenheden configureren</span>
                     </div>
-                  )}
+                    <p className="text-[11px] text-slate-600">
+                      Hier kunt u de volume-conversies per eenheid invoeren. Het systeem gebruikt deze waarden voor statistische weergaven (gewichten in kg) en voor de juiste prijsomrekeningen bij verzending.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleSaveCorrespondences} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs">
+                    <div className="space-y-4">
+                      <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-4">
+                        
+                        {/* kist aardbeien */}
+                        <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                          <span className="text-xs font-semibold text-slate-700">1 kist aardbeien =</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              required
+                              value={correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : ""}
+                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "kist_aardbeien_to_bakjes": parseFloat(e.target.value) || 0 }))}
+                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                            />
+                            <span className="text-xs text-slate-500 font-medium">bakjes</span>
+                          </div>
+                        </div>
+
+                        {/* doos kerstomaatjes */}
+                        <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                          <span className="text-xs font-semibold text-slate-700">1 doos kerstomaatjes =</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              required
+                              value={correspondences["doos_kerstomaten_to_bakjes"] !== undefined ? correspondences["doos_kerstomaten_to_bakjes"] : ""}
+                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "doos_kerstomaten_to_bakjes": parseFloat(e.target.value) || 0 }))}
+                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                            />
+                            <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
+                          </div>
+                        </div>
+
+                        {/* bakje aardbeien kg */}
+                        <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                          <span className="text-xs font-semibold text-slate-700">1 bakje aardbeien =</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              required
+                              value={correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : ""}
+                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_aardbeien_to_kg": parseFloat(e.target.value) || 0 }))}
+                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                            />
+                            <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                          </div>
+                        </div>
+
+                        {/* bakje kerstomaatjes kg */}
+                        <div className="flex items-center justify-between gap-4 py-1.5">
+                          <span className="text-xs font-semibold text-slate-700">1 bakje kerstomaatjes =</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              required
+                              value={correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : ""}
+                              onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
+                              className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                            />
+                            <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
+                    {correspondencesError && (
+                      <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-medium">
+                        {correspondencesError}
+                      </div>
+                    )}
+
+                    {correspondencesSuccess && (
+                      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
+                        <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                        Correspondenties succesvol opgeslagen!
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSavingCorrespondences}
+                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
+                    >
+                      {isSavingCorrespondences ? "Opslaan..." : "Correspondenties Opslaan"}
+                    </button>
+                  </form>
                 </div>
               )}
 

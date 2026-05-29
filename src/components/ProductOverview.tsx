@@ -61,6 +61,13 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [correspondences, setCorrespondences] = useState<Record<string, number>>({
+    "kist_aardbeien_to_bakjes": 10.0,
+    "doos_kerstomaten_to_bakjes": 10.0,
+    "bakje_aardbeien_to_kg": 0.5,
+    "bakje_kerstomaten_to_kg": 0.5
+  });
+
   // View state: "dashboard" (graph) or "database" (table)
   const [viewMode, setViewMode] = useState<"dashboard" | "database">("dashboard");
 
@@ -100,6 +107,14 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
 
   useEffect(() => {
     fetchRecords();
+    
+    // Fetch volume correspondences
+    fetch("/api/correspondences")
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) setCorrespondences(data);
+      })
+      .catch(e => console.error("Fout bij ophalen van correspondenties:", e));
   }, []);
 
   // Handle record deletion
@@ -171,13 +186,30 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
   // Filtered records for completeness database
   const filteredDatabaseRecords = useMemo(() => {
     return records.filter(r => {
-      // Filler filter
-      if (tableFilterFiller && r.inputterName.trim().toLowerCase() !== tableFilterFiller.trim().toLowerCase()) {
-        return false;
+      // Filler / ID filter (filters by email or by name)
+      if (tableFilterFiller) {
+        const fillLower = tableFilterFiller.trim().toLowerCase();
+        const nameLower = (r.inputterName || "").trim().toLowerCase();
+        const emailLower = (r.userEmail || "").trim().toLowerCase();
+        if (nameLower !== fillLower && emailLower !== fillLower) {
+          return false;
+        }
       }
-      // Product type filter
-      if (tableFilterProduct && r.productType !== tableFilterProduct) {
-        return false;
+      // Product type filter - simplified selection matching kisten/bakjes/bekers/dozen
+      if (tableFilterProduct) {
+        const prodLower = tableFilterProduct.trim().toLowerCase();
+        const rTypeLower = (r.productType || "").trim().toLowerCase();
+        
+        if (prodLower === "aardbeien groot") {
+          if (!rTypeLower.includes("aardbeien groot") && !rTypeLower.includes("aardbeiden groot")) return false;
+        } else if (prodLower === "aardbeien klein") {
+          if (!rTypeLower.includes("aardbeien klein") && !rTypeLower.includes("aardbeiden klein")) return false;
+        } else if (prodLower === "kerstomaten") {
+          if (!rTypeLower.includes("kerstomaten") && !rTypeLower.includes("kerstomaat") && !rTypeLower.includes("bekers")) return false;
+        } else {
+          // Fallback exact match
+          if (r.productType !== tableFilterProduct) return false;
+        }
       }
       // Month (MM/YYYY) filter
       if (tableFilterMonth) {
@@ -272,25 +304,32 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
       const submissionId = r.timestamp ? String(r.timestamp) : `${r.inputDate}-${r.inputTime}-${r.inputterName}`;
       existing.uniqueSubmissions.add(submissionId);
 
-      // Quantify in kilograms if selected product matches
-      // productType is "aardbeien groot (bakjes)", "aardbeien groot (kisten)", "aardbeien klein (bakjes)", "aardbeien klein (kisten)", "kerstomaten (bekers)", "kerstomaten (kisten)"
+      // Quantify in kilograms if geselecteerd product matches
       const typeLower = (r.productType || "").toLowerCase();
       
       let isMatch = false;
-      if (chartProduct === "aardbeien groot" && typeLower.startsWith("aardbeien groot")) {
+      if (chartProduct === "aardbeien groot" && (typeLower.startsWith("aardbeien groot") || typeLower.startsWith("aardbeiden groot"))) {
         isMatch = true;
-      } else if (chartProduct === "aardbeien klein" && typeLower.startsWith("aardbeien klein")) {
+      } else if (chartProduct === "aardbeien klein" && (typeLower.startsWith("aardbeien klein") || typeLower.startsWith("aardbeiden klein"))) {
         isMatch = true;
-      } else if (chartProduct === "kerstomaten" && (typeLower.startsWith("kerstomaten") || typeLower.startsWith("kers tomaten"))) {
+      } else if (chartProduct === "kerstomaten" && (typeLower.startsWith("kerstomaten") || typeLower.startsWith("kers tomaten") || typeLower.startsWith("kerstomaat"))) {
         isMatch = true;
       }
 
       if (isMatch) {
-        const isCrate = typeLower.includes("(kisten)") || typeLower.includes("kisten");
-        // Convert to Kilograms:
-        // 1 bakje = 500g = 0.5 kg
-        // 1 kist = 10 bakjes = 5.0 kg
-        const weightFactor = isCrate ? 5.0 : 0.5;
+        const isCrate = typeLower.includes("(kisten)") || typeLower.includes("kisten") || typeLower.includes("(dozen)") || typeLower.includes("dozen");
+        
+        let weightFactor = 0.5;
+        if (chartProduct === "aardbeien groot" || chartProduct === "aardbeien klein") {
+          const kistToBakjes = correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : 10.0;
+          const bakjeToKg = correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : 0.5;
+          weightFactor = isCrate ? (kistToBakjes * bakjeToKg) : bakjeToKg;
+        } else if (chartProduct === "kerstomaten") {
+          const doosToBakjes = correspondences["doos_kerstomaten_to_bakjes"] !== undefined ? correspondences["doos_kerstomaten_to_bakjes"] : 10.0;
+          const bakjeToKg = correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : 0.5;
+          weightFactor = isCrate ? (doosToBakjes * bakjeToKg) : bakjeToKg;
+        }
+
         existing.total += (Number(r.productQuantity) || 0) * weightFactor;
       }
 
@@ -454,7 +493,7 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                       <option value="aardbeien groot">Aardbeien groot (kg)</option>
                       <option value="aardbeien klein">Aardbeien klein (kg)</option>
                       <option value="kerstomaten">Kerstomaten (kg)</option>
-                      <option value="invoerbeurten">Aantal dagelijkse invoerbeurten</option>
+                      <option value="invoerbeurten">Aantal daily 'invoerbeurten'</option>
                     </select>
                   </div>
 
@@ -664,9 +703,9 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                       className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700"
                     >
                       <option value="">Alle producten</option>
-                      {uniqueProducts.map(p => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
+                      <option value="aardbeien groot">Aardbeien groot</option>
+                      <option value="aardbeien klein">Aardbeien klein</option>
+                      <option value="kerstomaten">Kerstomaten</option>
                     </select>
                   </div>
 
@@ -738,6 +777,9 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                           <th className="py-2.5 px-2">Vuller</th>
                           <th className="py-2.5 px-2">Producttype</th>
                           <th className="py-2.5 px-2 text-right">Aantal</th>
+                          <th className="py-2.5 px-2 text-right">Temp</th>
+                          <th className="py-2.5 px-2 text-right">Prijs/u</th>
+                          <th className="py-2.5 px-2 text-right">Totaal</th>
                           <th className="py-2.5 px-3 text-center">Actie</th>
                         </tr>
                       </thead>
@@ -755,6 +797,15 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                             </td>
                             <td className="py-2 px-2 text-right font-black text-rose-700 font-mono text-sm">
                               {r.productQuantity}
+                            </td>
+                            <td className="py-2 px-2 text-right font-semibold font-mono text-[10px] text-amber-700">
+                              {r.predictedTemperature !== undefined && r.predictedTemperature !== null ? `${r.predictedTemperature}°C` : "-"}
+                            </td>
+                            <td className="py-2 px-2 text-right font-medium font-mono text-[10px] text-slate-500">
+                              {r.unitPrice !== undefined && r.unitPrice !== null ? `€${Number(r.unitPrice).toFixed(2)}` : "-"}
+                            </td>
+                            <td className="py-2 px-2 text-right font-bold font-mono text-[10px] text-emerald-700">
+                              {r.totalPrice !== undefined && r.totalPrice !== null ? `€${Number(r.totalPrice).toFixed(2)}` : "-"}
                             </td>
                             <td className="py-2 px-3 text-center">
                               <button
@@ -793,6 +844,19 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                             <h4 className="text-xs font-black text-slate-800 truncate capitalize">
                               {r.productType}
                             </h4>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap py-0.5 font-mono text-[9px]">
+                            {r.predictedTemperature !== undefined && r.predictedTemperature !== null && (
+                              <span className="bg-amber-50 text-amber-700 border border-amber-200/50 px-1 px-0.5 rounded font-bold">
+                                ☀️ {r.predictedTemperature}°C
+                              </span>
+                            )}
+                            {r.totalPrice !== undefined && r.totalPrice !== null && (
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-1 px-0.5 rounded font-bold">
+                                €{Number(r.totalPrice).toFixed(2)}
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-1 text-[11px] text-slate-600">

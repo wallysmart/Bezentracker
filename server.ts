@@ -2,26 +2,87 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import {
-  getOneDriveConfig,
-  saveOneDriveConfig,
-  getOneDriveToken,
-  saveOneDriveToken,
-  deleteOneDriveToken,
-  appendRowsToOneDriveExcel,
-  getAdminsFromOneDrive,
-  saveAdminsToOneDrive,
-  OneDriveToken
-} from "./server-onedrive";
 
 const PORT = 3000;
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "database.json");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
+const ADMINS_FILE = path.join(DATA_DIR, "admins.json");
+const PRICES_FILE = path.join(DATA_DIR, "prices.json");
+const CORRESPONDENCES_FILE = path.join(DATA_DIR, "correspondences.json");
 
 // Ensure data directory and files exist
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (!fs.existsSync(DB_FILE)) {
+  fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2), "utf-8");
+}
+if (!fs.existsSync(USERS_FILE)) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2), "utf-8");
+}
+if (!fs.existsSync(ADMINS_FILE)) {
+  fs.writeFileSync(ADMINS_FILE, JSON.stringify(["wouter.torfss@gmail.com"], null, 2), "utf-8");
+}
+if (!fs.existsSync(PRICES_FILE)) {
+  fs.writeFileSync(PRICES_FILE, JSON.stringify({
+    "aardbeien groot": 4.5,
+    "aardbeien klein": 3.0,
+    "kerstomaten": 2.5
+  }, null, 2), "utf-8");
+}
+if (!fs.existsSync(CORRESPONDENCES_FILE)) {
+  fs.writeFileSync(CORRESPONDENCES_FILE, JSON.stringify({
+    "kist_aardbeien_to_bakjes": 10.0,
+    "doos_kerstomaten_to_bakjes": 10.0,
+    "bakje_aardbeien_to_kg": 0.5,
+    "bakje_kerstomaten_to_kg": 0.5
+  }, null, 2), "utf-8");
+}
+
+function getLocalAdmins(): string[] {
+  try {
+    if (fs.existsSync(ADMINS_FILE)) {
+      return JSON.parse(fs.readFileSync(ADMINS_FILE, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Fout bij lezen admins bestand:", err);
+  }
+  return ["wouter.torfss@gmail.com"];
+}
+
+function saveLocalAdmins(admins: string[]): void {
+  fs.writeFileSync(ADMINS_FILE, JSON.stringify(admins, null, 2), "utf-8");
+}
+
+// Weather Forecast helper using free Open-Meteo API
+async function fetchPredictedTemperature(dutchDate: string): Promise<number | null> {
+  try {
+    const parts = dutchDate.split("-");
+    if (parts.length !== 3) return null;
+    const day = parts[0].padStart(2, "0");
+    const month = parts[1].padStart(2, "0");
+    const year = parts[2];
+    const targetDateStr = `${year}-${month}-${day}`;
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=51.0&longitude=4.5&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/Brussels`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    if (data && data.daily && data.daily.time) {
+      const idx = data.daily.time.indexOf(targetDateStr);
+      if (idx !== -1) {
+        const tMax = data.daily.temperature_2m_max[idx];
+        const tMin = data.daily.temperature_2m_min[idx];
+        if (tMax !== undefined && tMin !== undefined) {
+          return Math.round(((tMax + tMin) / 2) * 10) / 10;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Fout ophalen temperatuur van Open-Meteo:", err);
+  }
+  return null;
 }
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2), "utf-8");
@@ -201,6 +262,9 @@ interface RecordRow {
   productQuantity: number;
   timestamp: number;
   userEmail: string;
+  unitPrice?: number;
+  totalPrice?: number;
+  predictedTemperature?: number | null;
 }
 
 async function startServer() {
@@ -254,49 +318,83 @@ async function startServer() {
       const fileData = fs.readFileSync(DB_FILE, "utf-8");
       const records: RecordRow[] = JSON.parse(fileData);
 
+      // fetch predicted temperature
+      const activeDate = inputDate || new Date().toLocaleDateString("nl-NL");
+      let temp: number | null = null;
+      try {
+        temp = await fetchPredictedTemperature(activeDate);
+      } catch (err) {
+        console.warn("Fout bij ophalen temperatuur in POST:", err);
+      }
+
+      // Load prices configuration
+      let priceConfig: Record<string, number> = { "aardbeien groot": 4.5, "aardbeien klein": 3.0, "kerstomaten": 2.5 };
+      try {
+        if (fs.existsSync(PRICES_FILE)) {
+          priceConfig = JSON.parse(fs.readFileSync(PRICES_FILE, "utf-8"));
+        }
+      } catch (err) {
+        console.error("Fout laden prijzen:", err);
+      }
+
+      // Load correspondences configuration
+      let correspondenceConfig: Record<string, number> = {
+        "kist_aardbeien_to_bakjes": 10.0,
+        "doos_kerstomaten_to_bakjes": 10.0,
+        "bakje_aardbeien_to_kg": 0.5,
+        "bakje_kerstomaten_to_kg": 0.5
+      };
+      try {
+        if (fs.existsSync(CORRESPONDENCES_FILE)) {
+          correspondenceConfig = JSON.parse(fs.readFileSync(CORRESPONDENCES_FILE, "utf-8"));
+        }
+      } catch (err) {
+        console.error("Fout laden correspondenties:", err);
+      }
+
       const timestamp = Date.now();
       const newRows: RecordRow[] = [];
 
       items.forEach((item: { productType: string; productQuantity: number }) => {
-        // We register each product's entry (even 0 if entered, but let's register all entries the user submitted)
+        const typeLower = (item.productType || "").toLowerCase();
+        let baseProduct = "aardbeien groot";
+        if (typeLower.startsWith("aardbeien klein")) {
+          baseProduct = "aardbeien klein";
+        } else if (typeLower.startsWith("kerstomaten") || typeLower.startsWith("kers tomaten")) {
+          baseProduct = "kerstomaten";
+        }
+
+        const basePrice = priceConfig[baseProduct] !== undefined ? priceConfig[baseProduct] : 4.5;
+        const isCrate = typeLower.includes("(kisten)") || typeLower.includes("kisten");
+
+        let unitMultiplier = 1.0;
+        if (isCrate) {
+          if (baseProduct === "kerstomaten") {
+            unitMultiplier = Number(correspondenceConfig["doos_kerstomaten_to_bakjes"]) || 10.0;
+          } else {
+            unitMultiplier = Number(correspondenceConfig["kist_aardbeien_to_bakjes"]) || 10.0;
+          }
+        }
+
+        const calculatedUnitPrice = basePrice * unitMultiplier;
+        const totalPrice = Math.round((Number(item.productQuantity) || 0) * calculatedUnitPrice * 100) / 100;
+
         newRows.push({
           id: `${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
           inputterName: inputterName.trim(),
-          inputDate: inputDate || new Date().toLocaleDateString("nl-NL"),
+          inputDate: activeDate,
           inputTime: inputTime || new Date().toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }),
           productType: item.productType,
           productQuantity: Number(item.productQuantity) || 0,
           timestamp,
           userEmail: emailNorm,
+          unitPrice: calculatedUnitPrice,
+          totalPrice,
+          predictedTemperature: temp
         });
       });
 
       records.push(...newRows);
-
-      // Append positive quantities to OneDrive Excel worksheet if connected
-      const oneDriveRows = newRows
-        .filter(r => r.productQuantity > 0)
-        .map(r => ({
-          naam: r.inputterName,
-          datum: r.inputDate,
-          uur: r.inputTime,
-          product: r.productType,
-          aantal: r.productQuantity
-        }));
-
-      if (oneDriveRows.length > 0) {
-        try {
-          const token = getOneDriveToken();
-          if (token) {
-            await appendRowsToOneDriveExcel(oneDriveRows);
-          } else {
-            console.log("OneDrive is niet geconfigureerd of gekoppeld. Gegevens alleen lokaal opgeslagen.");
-          }
-        } catch (odError: any) {
-          console.error("Fout bij opslaan naar OneDrive:", odError.message);
-          return res.status(500).json({ error: `OneDrive-fout: ${odError.message}` });
-        }
-      }
 
       fs.writeFileSync(DB_FILE, JSON.stringify(records, null, 2), "utf-8");
 
@@ -315,7 +413,7 @@ async function startServer() {
       let records: RecordRow[] = JSON.parse(fileData);
       
       const beforeLength = records.length;
-      records = records.filter(r => r.id !== id);
+      records = records.filter(r => String(r.id).trim() !== String(id).trim());
       
       if (records.length === beforeLength) {
         return res.status(404).json({ error: "Record niet gevonden" });
@@ -329,166 +427,53 @@ async function startServer() {
     }
   });
 
-  // GET OneDrive Status API
-  app.get("/api/onedrive/status", (req, res) => {
+  // GET prices
+  app.get("/api/admin/prices", (req, res) => {
     try {
-      const config = getOneDriveConfig();
-      const token = getOneDriveToken();
-      
-      const proto = req.get("x-forwarded-proto") || req.protocol;
-      const host = req.get("host");
-      const redirectUri = `${proto}://${host}/api/onedrive/callback`;
+      const data = fs.readFileSync(PRICES_FILE, "utf-8");
+      res.json(JSON.parse(data));
+    } catch (e) {
+      res.status(500).json({ error: "Fout bij ophalen van prijszetting" });
+    }
+  });
 
-      const isEnvConfigured = !!(process.env.ONEDRIVE_CLIENT_ID && process.env.ONEDRIVE_CLIENT_SECRET);
-      const isConfigured = isEnvConfigured || !!(config && config.clientId && config.clientSecret);
-      const isConnected = !!token;
-
-      res.json({
-        isConfigured,
-        isEnvConfigured,
-        isConnected,
-        clientId: isEnvConfigured ? "" : (config?.clientId || ""), // Completely secure & invisible
-        userEmail: token?.userEmail || "",
-        userName: token?.userName || "",
-        redirectUri,
-      });
+  // POST prices
+  app.post("/api/admin/prices", async (req, res) => {
+    try {
+      const { adminEmail, prices } = req.body;
+      const isAuthorized = await verifyIsAdmin(adminEmail);
+      if (!isAuthorized) {
+        return res.status(403).json({ error: "Toegang geweigerd." });
+      }
+      fs.writeFileSync(PRICES_FILE, JSON.stringify(prices, null, 2), "utf-8");
+      res.json({ success: true, prices });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Fout bij opslaan van prijszetting" });
     }
   });
 
-  // POST OneDrive Config credentials API
-  app.post("/api/onedrive/config", (req, res) => {
+  // GET correspondences
+  app.get("/api/correspondences", (req, res) => {
     try {
-      const isEnvConfigured = !!(process.env.ONEDRIVE_CLIENT_ID && process.env.ONEDRIVE_CLIENT_SECRET);
-      if (isEnvConfigured) {
-        return res.status(403).json({ error: "Configuratie is beveiligd door de ontwikkelaar en kan niet in de browser worden gewijzigd." });
-      }
+      const data = fs.readFileSync(CORRESPONDENCES_FILE, "utf-8");
+      res.json(JSON.parse(data));
+    } catch (e) {
+      res.status(500).json({ error: "Fout bij ophalen van volume-correspondenties" });
+    }
+  });
 
-      const { clientId, clientSecret } = req.body;
-      if (!clientId || !clientSecret) {
-        return res.status(400).json({ error: "Client-ID en Client-Secret zijn verplicht." });
+  // POST correspondences
+  app.post("/api/admin/correspondences", async (req, res) => {
+    try {
+      const { adminEmail, correspondences } = req.body;
+      const isAuthorized = await verifyIsAdmin(adminEmail);
+      if (!isAuthorized) {
+        return res.status(403).json({ error: "Toegang geweigerd." });
       }
-      saveOneDriveConfig({ clientId: clientId.trim(), clientSecret: clientSecret.trim() });
-      res.json({ success: true });
+      fs.writeFileSync(CORRESPONDENCES_FILE, JSON.stringify(correspondences, null, 2), "utf-8");
+      res.json({ success: true, correspondences });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // POST disconnect / logout OneDrive API
-  app.post("/api/onedrive/disconnect", (req, res) => {
-    try {
-      deleteOneDriveToken();
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // GET Start Microsoft OAuth redirect
-  app.get("/api/onedrive/auth", (req, res) => {
-    try {
-      const config = getOneDriveConfig();
-      if (!config || !config.clientId) {
-        return res.status(400).send("OneDrive is nog niet geconfigureerd via het beheerderspaneel.");
-      }
-
-      const proto = req.get("x-forwarded-proto") || req.protocol;
-      const host = req.get("host");
-      const redirectUri = `${proto}://${host}/api/onedrive/callback`;
-
-      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
-        `client_id=${config.clientId}` +
-        `&response_type=code` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_mode=query` +
-        `&scope=${encodeURIComponent("offline_access Files.ReadWrite User.Read")}` +
-        `&state=onedrive_auth`;
-
-      res.redirect(authUrl);
-    } catch (error: any) {
-      console.error("Auth redirect error:", error);
-      res.status(500).send("Fout tijdens auth omleiding: " + error.message);
-    }
-  });
-
-  // GET OneDrive Callback API to exchange authorization code for credentials
-  app.get("/api/onedrive/callback", async (req, res) => {
-    try {
-      const { code, error, error_description } = req.query;
-      
-      if (error) {
-        return res.status(400).send(`OneDrive OAuth Fout: ${error} - ${error_description}`);
-      }
-
-      if (!code) {
-        return res.status(400).send("Geen verificatiecode ontvangen van Microsoft.");
-      }
-
-      const config = getOneDriveConfig();
-      if (!config || !config.clientId || !config.clientSecret) {
-        return res.status(400).send("Geen OneDrive configuratie gevonden.");
-      }
-
-      const proto = req.get("x-forwarded-proto") || req.protocol;
-      const host = req.get("host");
-      const redirectUri = `${proto}://${host}/api/onedrive/callback`;
-
-      const params = new URLSearchParams();
-      params.append("client_id", config.clientId);
-      params.append("client_secret", config.clientSecret);
-      params.append("code", code as string);
-      params.append("redirect_uri", redirectUri);
-      params.append("grant_type", "authorization_code");
-
-      const tokenRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params.toString(),
-      });
-
-      if (!tokenRes.ok) {
-        const errText = await tokenRes.text();
-        return res.status(400).send(`Token exchange mislukt: ${errText}`);
-      }
-
-      const tokenData = await tokenRes.json();
-
-      let userEmail = "";
-      let userName = "";
-
-      try {
-        const profileRes = await fetch("https://graph.microsoft.com/v1.0/me", {
-          headers: {
-            Authorization: `Bearer ${tokenData.access_token}`,
-          },
-        });
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
-          userEmail = profile.mail || profile.userPrincipalName || "";
-          userName = profile.displayName || "";
-        }
-      } catch (profileErr) {
-        console.error("Error fetching OneDrive profile details:", profileErr);
-      }
-
-      const tokenInfo: OneDriveToken = {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiresAt: Date.now() + tokenData.expires_in * 1000,
-        userEmail,
-        userName,
-      };
-
-      saveOneDriveToken(tokenInfo);
-
-      res.redirect("/?onedrive_success=true");
-    } catch (err: any) {
-      console.error("OneDrive callback exchange error:", err);
-      res.status(500).send("Fout bij tokenuitwisseling: " + err.message);
+      res.status(500).json({ error: "Fout bij opslaan van volume-correspondenties" });
     }
   });
 
@@ -538,7 +523,7 @@ async function startServer() {
       const displayName = String(name || "Gebruiker").trim();
 
       // Read admins
-      const admins = await getAdminsFromOneDrive();
+      const admins = getLocalAdmins();
       const isAdmin = admins.includes(emailNorm);
 
       // Read current registry
@@ -620,7 +605,7 @@ async function startServer() {
       }
 
       // Read admins
-      const admins = await getAdminsFromOneDrive();
+      const admins = getLocalAdmins();
       const isAdmin = admins.includes(emailNorm);
 
       let users: AppUser[] = [];
@@ -698,8 +683,8 @@ async function startServer() {
         return res.status(400).json({ error: "E-mailadres of wachtwoord is onjuist." });
       }
 
-      // Check current admin status in case OneDrive list changed
-      const admins = await getAdminsFromOneDrive();
+      // Check current admin status
+      const admins = getLocalAdmins();
       const isAdmin = admins.includes(emailNorm);
 
       let userStatus = foundUser.status;
@@ -729,7 +714,7 @@ async function startServer() {
   // Helper middleware/check for admin routes
   const verifyIsAdmin = async (adminEmail: string): Promise<boolean> => {
     const norm = adminEmail.toLowerCase().trim();
-    const admins = await getAdminsFromOneDrive();
+    const admins = getLocalAdmins();
     return admins.includes(norm);
   };
 
@@ -742,7 +727,7 @@ async function startServer() {
         return res.status(403).json({ error: "Toegang geweigerd. U bent geen beheerder." });
       }
 
-      const admins = await getAdminsFromOneDrive();
+      const admins = getLocalAdmins();
       res.json({ success: true, admins });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -763,11 +748,11 @@ async function startServer() {
       }
 
       const targetNorm = String(newAdminEmail).toLowerCase().trim();
-      const admins = await getAdminsFromOneDrive();
+      const admins = getLocalAdmins();
 
       if (!admins.includes(targetNorm)) {
         admins.push(targetNorm);
-        await saveAdminsToOneDrive(admins);
+        saveLocalAdmins(admins);
 
         // Also make sure their status is approved in the user list
         let users: AppUser[] = [];
@@ -801,9 +786,9 @@ async function startServer() {
         return res.status(400).json({ error: "De hoofdbeheerder kan niet worden verwijderd." });
       }
 
-      let admins = await getAdminsFromOneDrive();
+      let admins = getLocalAdmins();
       admins = admins.filter(a => a.toLowerCase().trim() !== targetNorm);
-      await saveAdminsToOneDrive(admins);
+      saveLocalAdmins(admins);
 
       res.json({ success: true, admins });
     } catch (err: any) {
