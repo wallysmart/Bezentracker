@@ -1,0 +1,6 @@
+{
+  "name": "Automaat Vuller App",
+  "description": "Mobiele app voor het registreren van de gevulde producten (aardbeien groot, aardbeien klein, kerstomaten) in verkoopautomaten met ondersteuning voor database opslag en Excel-export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

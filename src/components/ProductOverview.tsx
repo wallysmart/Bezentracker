@@ -1,0 +1,876 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { 
+  BarChart3, 
+  Calendar, 
+  ChevronLeft, 
+  ChevronRight, 
+  Database, 
+  Filter, 
+  RefreshCw, 
+  Search, 
+  Trash2, 
+  TrendingUp, 
+  X,
+  User,
+  ShoppingBag,
+  ArrowRight,
+  Info,
+  CalendarDays
+} from "lucide-react";
+import { 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
+} from "recharts";
+import { RecordRow } from "../types";
+
+// Helper to parse Dutch date of format DD-MM-YYYY
+const parseDutchDate = (dateStr: string): Date => {
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    const year = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  }
+  return new Date();
+};
+
+// Helper to format Date into DD-MM-YYYY Dutch format
+const formatToDutchDate = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}-${month}-${year}`;
+};
+
+interface ProductOverviewProps {
+  serverUser: {
+    email: string;
+    name: string;
+    isAdmin: boolean;
+  } | null;
+}
+
+export default function ProductOverview({ serverUser }: ProductOverviewProps) {
+  const [records, setRecords] = useState<RecordRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // View state: "dashboard" (graph) or "database" (table)
+  const [viewMode, setViewMode] = useState<"dashboard" | "database">("dashboard");
+
+  // Filter states for complete database table view
+  const [tableFilterFiller, setTableFilterFiller] = useState("");
+  const [tableFilterProduct, setTableFilterProduct] = useState("");
+  const [tableFilterMonth, setTableFilterMonth] = useState("");
+  const [tableFilterBeginDate, setTableFilterBeginDate] = useState("");
+  const [tableFilterEndDate, setTableFilterEndDate] = useState("");
+  const [tablePage, setTablePage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Chart configuration states
+  const [chartProduct, setChartProduct] = useState("aardbeien groot");
+  const [chartPeriod, setChartPeriod] = useState("30_DAYS"); // "30_DAYS", "3_MONTHS", "CURRENT_YEAR", "CUSTOM"
+  const [chartBeginDate, setChartBeginDate] = useState("");
+  const [chartEndDate, setChartEndDate] = useState("");
+
+  // Load records from API
+  const fetchRecords = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/records");
+      if (!res.ok) {
+        throw new Error("Mislukt om databasegegevens op te halen.");
+      }
+      const data = await res.json();
+      setRecords(data);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Fout bij verbinding met de server.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecords();
+  }, []);
+
+  // Handle record deletion
+  const handleDeleteRecord = async (id: string, detailString: string) => {
+    if (!confirm(`Weet u zeker dat u dit record wilt verwijderen?\n\n${detailString}`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/records/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        // Optimistic / Real reload
+        setRecords(prev => prev.filter(r => r.id !== id));
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Fout bij het verwijderen van record.");
+      }
+    } catch (e) {
+      alert("Fout bij het verwijderen van record.");
+    }
+  };
+
+  // Get unique lists of properties for filtering
+  const uniqueProducts = useMemo(() => {
+    const list = new Set<string>();
+    records.forEach(r => {
+      if (r.productType) list.add(r.productType);
+    });
+    return Array.from(list).sort();
+  }, [records]);
+
+  const uniqueFillers = useMemo(() => {
+    const list = new Set<string>();
+    records.forEach(r => {
+      if (r.inputterName) list.add(r.inputterName.trim());
+    });
+    return Array.from(list).sort();
+  }, [records]);
+
+  const uniqueMonths = useMemo(() => {
+    const list = new Set<string>();
+    records.forEach(r => {
+      const date = parseDutchDate(r.inputDate);
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      const yyyy = date.getFullYear();
+      list.add(`${mm}/${yyyy}`);
+    });
+    return Array.from(list).sort((a, b) => {
+      // Sort months chronologically descending (newest first)
+      const [mA, yA] = a.split("/").map(Number);
+      const [mB, yB] = b.split("/").map(Number);
+      if (yB !== yA) return yB - yA;
+      return mB - mA;
+    });
+  }, [records]);
+
+  // Reset filters
+  const handleResetFilters = () => {
+    setTableFilterFiller("");
+    setTableFilterProduct("");
+    setTableFilterMonth("");
+    setTableFilterBeginDate("");
+    setTableFilterEndDate("");
+    setTablePage(1);
+  };
+
+  // Filtered records for completeness database
+  const filteredDatabaseRecords = useMemo(() => {
+    return records.filter(r => {
+      // Filler filter
+      if (tableFilterFiller && r.inputterName.trim().toLowerCase() !== tableFilterFiller.trim().toLowerCase()) {
+        return false;
+      }
+      // Product type filter
+      if (tableFilterProduct && r.productType !== tableFilterProduct) {
+        return false;
+      }
+      // Month (MM/YYYY) filter
+      if (tableFilterMonth) {
+        const date = parseDutchDate(r.inputDate);
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const yyyy = date.getFullYear();
+        if (`${mm}/${yyyy}` !== tableFilterMonth) {
+          return false;
+        }
+      }
+      // Start & End date filter
+      const rDate = parseDutchDate(r.inputDate);
+      if (tableFilterBeginDate) {
+        const start = new Date(tableFilterBeginDate);
+        start.setHours(0,0,0,0);
+        if (rDate < start) return false;
+      }
+      if (tableFilterEndDate) {
+        const end = new Date(tableFilterEndDate);
+        end.setHours(23,59,59,999);
+        if (rDate > end) return false;
+      }
+
+      return true;
+    });
+  }, [records, tableFilterFiller, tableFilterProduct, tableFilterMonth, tableFilterBeginDate, tableFilterEndDate]);
+
+  // PAGINATION
+  const paginatedRecords = useMemo(() => {
+    const startIdx = (tablePage - 1) * itemsPerPage;
+    return filteredDatabaseRecords.slice(startIdx, startIdx + itemsPerPage);
+  }, [filteredDatabaseRecords, tablePage]);
+
+  const totalPages = Math.ceil(filteredDatabaseRecords.length / itemsPerPage) || 1;
+
+  // CHART DATA PREPARATION
+  const chartData = useMemo(() => {
+    // Determine boundary dates based on period selection
+    const now = new Date();
+    let startDate = new Date();
+    let isAppliedCustomRange = false;
+
+    if (chartPeriod === "30_DAYS") {
+      startDate.setDate(now.getDate() - 30);
+    } else if (chartPeriod === "3_MONTHS") {
+      startDate.setMonth(now.getMonth() - 3);
+    } else if (chartPeriod === "CURRENT_YEAR") {
+      startDate = new Date(now.getFullYear(), 0, 1);
+    } else if (chartPeriod === "CUSTOM" && chartBeginDate) {
+      startDate = new Date(chartBeginDate);
+      isAppliedCustomRange = true;
+    } else {
+      startDate.setDate(now.getDate() - 30); // fallback
+    }
+    startDate.setHours(0,0,0,0);
+
+    let endDate = new Date();
+    if (chartPeriod === "CUSTOM" && chartEndDate) {
+      endDate = new Date(chartEndDate);
+    }
+    endDate.setHours(23,59,59,999);
+
+    // Filter relevant records in chronological range
+    const rangeRecords = records.filter(r => {
+      const rDate = parseDutchDate(r.inputDate);
+      return rDate >= startDate && rDate <= endDate;
+    });
+
+    // Group items by date string
+    const dailyMap = new Map<string, { displayDate: string; timestamp: number; total: number; uniqueSubmissions: Set<string> }>();
+
+    // Sort records oldest first for chart timeline plotting
+    const sortedTimeline = [...rangeRecords].sort((a, b) => {
+      return parseDutchDate(a.inputDate).getTime() - parseDutchDate(b.inputDate).getTime();
+    });
+
+    sortedTimeline.forEach(r => {
+      const dateObj = parseDutchDate(r.inputDate);
+      const dateKey = r.inputDate; // DD-MM-YYYY is reliable key
+      
+      // Keep a simplified label (e.g., DD MMM)
+      const shortLabel = dateObj.toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+      
+      const existing = dailyMap.get(dateKey) || { 
+        displayDate: shortLabel, 
+        timestamp: dateObj.getTime(), 
+        total: 0,
+        uniqueSubmissions: new Set<string>()
+      };
+      
+      // We identify a unique user submission (invoerbeurt) by its timestamp OR a combination of date, time and inputterName
+      const submissionId = r.timestamp ? String(r.timestamp) : `${r.inputDate}-${r.inputTime}-${r.inputterName}`;
+      existing.uniqueSubmissions.add(submissionId);
+
+      // Quantify in kilograms if selected product matches
+      // productType is "aardbeien groot (bakjes)", "aardbeien groot (kisten)", "aardbeien klein (bakjes)", "aardbeien klein (kisten)", "kerstomaten (bekers)", "kerstomaten (kisten)"
+      const typeLower = (r.productType || "").toLowerCase();
+      
+      let isMatch = false;
+      if (chartProduct === "aardbeien groot" && typeLower.startsWith("aardbeien groot")) {
+        isMatch = true;
+      } else if (chartProduct === "aardbeien klein" && typeLower.startsWith("aardbeien klein")) {
+        isMatch = true;
+      } else if (chartProduct === "kerstomaten" && (typeLower.startsWith("kerstomaten") || typeLower.startsWith("kers tomaten"))) {
+        isMatch = true;
+      }
+
+      if (isMatch) {
+        const isCrate = typeLower.includes("(kisten)") || typeLower.includes("kisten");
+        // Convert to Kilograms:
+        // 1 bakje = 500g = 0.5 kg
+        // 1 kist = 10 bakjes = 5.0 kg
+        const weightFactor = isCrate ? 5.0 : 0.5;
+        existing.total += (Number(r.productQuantity) || 0) * weightFactor;
+      }
+
+      dailyMap.set(dateKey, existing);
+    });
+
+    // Convert map to array and apply chartProduct specific totals
+    const result = Array.from(dailyMap.values()).map(item => {
+      let finalTotal = item.total;
+      if (chartProduct === "invoerbeurten") {
+        finalTotal = item.uniqueSubmissions.size;
+      } else {
+        // Round to 1 decimal place for Kg representation
+        finalTotal = Math.round(finalTotal * 10) / 10;
+      }
+      return {
+        displayDate: item.displayDate,
+        timestamp: item.timestamp,
+        total: finalTotal
+      };
+    });
+
+    // Sort chronologically
+    return result.sort((a, b) => a.timestamp - b.timestamp);
+  }, [records, chartProduct, chartPeriod, chartBeginDate, chartEndDate]);
+
+  // Overall statistics for the selected Chart Product & Period
+  const chartStats = useMemo(() => {
+    let totalFilledSum = 0;
+    chartData.forEach(d => {
+      totalFilledSum += d.total;
+    });
+
+    // Calculate total unique submissions (invoerbeurten) for this period
+    const now = new Date();
+    let startDate = new Date();
+    if (chartPeriod === "30_DAYS") startDate.setDate(now.getDate() - 30);
+    else if (chartPeriod === "3_MONTHS") startDate.setMonth(now.getMonth() - 3);
+    else if (chartPeriod === "CURRENT_YEAR") startDate = new Date(now.getFullYear(), 0, 1);
+    else if (chartPeriod === "CUSTOM" && chartBeginDate) startDate = new Date(chartBeginDate);
+    startDate.setHours(0,0,0,0);
+
+    let endDate = new Date();
+    if (chartPeriod === "CUSTOM" && chartEndDate) endDate = new Date(chartEndDate);
+    endDate.setHours(23,59,59,999);
+
+    const periodRecords = records.filter(r => {
+      const rDate = parseDutchDate(r.inputDate);
+      return rDate >= startDate && rDate <= endDate;
+    });
+
+    const uniqueSubmissionsInPeriod = new Set<string>();
+    periodRecords.forEach(r => {
+      const subId = r.timestamp ? String(r.timestamp) : `${r.inputDate}-${r.inputTime}-${r.inputterName}`;
+      uniqueSubmissionsInPeriod.add(subId);
+    });
+
+    const entriesCount = uniqueSubmissionsInPeriod.size;
+    const averagePerDay = chartData.length > 0 ? Math.round((totalFilledSum / chartData.length) * 10) / 10 : 0;
+
+    return {
+      totalFilled: Math.round(totalFilledSum * 10) / 10,
+      entriesCount, // Total unique inputs
+      averagePerDay
+    };
+  }, [chartData, records, chartPeriod, chartBeginDate, chartEndDate]);
+
+  // Handle Refresh UI
+  const handleRefresh = () => {
+    fetchRecords();
+  };
+
+  return (
+    <div className="w-full space-y-4" id="product-overview-master">
+      {/* Tab Header inside page */}
+      <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-[#BE123C]" />
+          <h3 className="font-display font-black text-rose-800 text-sm tracking-widest uppercase">
+            {viewMode === "dashboard" ? "Verkochte Producten Evolutie" : "Databaseregister Vullingen"}
+          </h3>
+        </div>
+        
+        <div className="flex items-center gap-1.5">
+          <button 
+            type="button"
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors disabled:opacity-50 text-slate-500 cursor-pointer"
+            title="Database vernieuwen"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode(viewMode === "dashboard" ? "database" : "dashboard");
+              setTablePage(1);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shadow-5xs cursor-pointer select-none bg-rose-50 border-rose-150 text-[#BE123C] hover:bg-rose-100/70"
+          >
+            {viewMode === "dashboard" ? (
+              <>
+                <Database className="w-3.5 h-3.5" />
+                <span>Volledige Database</span>
+              </>
+            ) : (
+              <>
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Evolutiegrafiek</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="py-20 flex flex-col items-center justify-center gap-3">
+          <RefreshCw className="w-8 h-8 text-[#BE123C] animate-spin stroke-[2.5]" />
+          <p className="text-xs font-bold font-mono uppercase tracking-widest text-[#BE123C]">Gegevens ophalen...</p>
+        </div>
+      ) : error ? (
+        <div className="p-6 bg-rose-50 border border-rose-100 rounded-2xl text-center space-y-3 max-w-md mx-auto">
+          <Info className="w-8 h-8 text-[#BE123C] mx-auto" />
+          <p className="text-xs font-bold text-rose-800 leading-normal">{error}</p>
+          <button
+            type="button"
+            onClick={fetchRecords}
+            className="px-4 py-1.5 rounded-lg bg-[#BE123C] text-white text-xs font-bold transition-all cursor-pointer"
+          >
+            Opnieuw Proberen
+          </button>
+        </div>
+      ) : records.length === 0 ? (
+        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-10 text-center space-y-3 text-slate-400">
+          <Database className="w-10 h-10 stroke-[1.5] mx-auto" />
+          <p className="text-xs font-bold text-slate-700">Nog geen invoergegevens gevonden</p>
+          <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+            Zodra er vullingen worden geregistreerd via de BezenTracker, verschijnt hier de interactieve grafiek en spreadsheet.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* ================= VIEW 1: EVOLUTION GRAPH & DASHBOARD ================= */}
+          {viewMode === "dashboard" && (
+            <div className="space-y-4" id="graph-panel-view">
+              
+              {/* Dashboard Selectors */}
+              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3 sm:p-4 space-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  
+                  {/* Selector 1: Product Selector */}
+                  <div>
+                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 font-mono">Evolutie van</label>
+                    <select
+                      value={chartProduct}
+                      onChange={(e) => setChartProduct(e.target.value)}
+                      className="w-full bg-white border border-slate-200/80 rounded-xl py-2 px-3 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700 shadow-5xs"
+                    >
+                      <option value="aardbeien groot">Aardbeien groot (kg)</option>
+                      <option value="aardbeien klein">Aardbeien klein (kg)</option>
+                      <option value="kerstomaten">Kerstomaten (kg)</option>
+                      <option value="invoerbeurten">Aantal dagelijkse invoerbeurten</option>
+                    </select>
+                  </div>
+
+                  {/* Selector 2: Period Selector */}
+                  <div>
+                    <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 font-mono">Tijdsperiode</label>
+                    <select
+                      value={chartPeriod}
+                      onChange={(e) => setChartPeriod(e.target.value)}
+                      className="w-full bg-white border border-slate-200/80 rounded-xl py-2 px-3 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700 shadow-5xs"
+                    >
+                      <option value="30_DAYS">Laatste 30 dagen</option>
+                      <option value="3_MONTHS">Laatste 3 maanden</option>
+                      <option value="CURRENT_YEAR">Huidig jaar ({new Date().getFullYear()})</option>
+                      <option value="CUSTOM">Specifieke begin & einddatum</option>
+                    </select>
+                  </div>
+
+                </div>
+
+                {/* Specific Begin & End date input side-by-side if Custom period is chosen */}
+                {chartPeriod === "CUSTOM" && (
+                  <div className="grid grid-cols-2 gap-3 border-t border-slate-200/70 pt-3 flex-wrap">
+                    <div>
+                      <label className="block text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1 font-mono">Begindatum</label>
+                      <div className="relative">
+                        <input
+                          type="date"
+                          value={chartBeginDate}
+                          onChange={(e) => setChartBeginDate(e.target.value)}
+                          className="w-full bg-white border border-slate-200/80 rounded-xl py-1.5 px-3 text-xs font-medium focus:outline-none focus:border-[#BE123C] text-slate-700 inline-flex items-center shadow-5xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1 font-mono">Einddatum</label>
+                      <div className="relative">
+                        <input
+                          type="date"
+                          value={chartEndDate}
+                          onChange={(e) => setChartEndDate(e.target.value)}
+                          className="w-full bg-white border border-slate-200/80 rounded-xl py-1.5 px-3 text-xs font-medium focus:outline-none focus:border-[#BE123C] text-slate-700 inline-flex items-center shadow-5xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* KPI stat counters block */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-slate-50/60 p-2.5 sm:p-3 rounded-xl border border-slate-100 text-center font-mono">
+                  <span className="block text-[8px] sm:text-[9px] font-bold uppercase text-slate-400 tracking-wider">
+                    {chartProduct === "invoerbeurten" ? "Totale Invoer" : "Totaal Volume"}
+                  </span>
+                  <span className="text-base sm:text-lg font-black text-[#BE123C] leading-none mt-0.5 block">
+                    {chartStats.totalFilled} {chartProduct === "invoerbeurten" ? "keer" : "kg"}
+                  </span>
+                </div>
+                <div className="bg-slate-50/60 p-2.5 sm:p-3 rounded-xl border border-slate-100 text-center font-mono">
+                  <span className="block text-[8px] sm:text-[9px] font-bold uppercase text-slate-400 tracking-wider">Invoerbeurten</span>
+                  <span className="text-base sm:text-lg font-black text-slate-700 leading-none mt-0.5 block">
+                    {chartStats.entriesCount} keer
+                  </span>
+                </div>
+                <div className="bg-slate-50/60 p-2.5 sm:p-3 rounded-xl border border-slate-100 text-center font-mono">
+                  <span className="block text-[8px] sm:text-[9px] font-bold uppercase text-slate-400 tracking-wider">Gemiddelde / dag</span>
+                  <span className="text-base sm:text-lg font-black text-rose-600 leading-none mt-0.5 block">
+                    {chartStats.averagePerDay} {chartProduct === "invoerbeurten" ? "keer/dag" : "kg/dag"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Recharts Container AreaChart */}
+              <div className="bg-white border border-slate-150 rounded-2xl p-2.5 sm:p-4">
+                <div className="h-60 sm:h-72 w-full p-1" id="recharts-wrapper">
+                  {chartData.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-2">
+                      <CalendarDays className="w-8 h-8 opacity-40" />
+                      <p className="text-xs font-bold font-mono uppercase tracking-wider text-slate-500">Geen trendgegevens</p>
+                      <p className="text-[10px] text-slate-400 max-w-xs leading-relaxed">
+                        Er zijn geen vullingen geregistreerd binnen de geselecteerde filtercriteria. Selecteer een andere tijdsperiode of ander product.
+                      </p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={chartData}
+                        margin={{ top: 10, right: 10, left: -22, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorQuantity" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#BE123C" stopOpacity={0.25}/>
+                            <stop offset="95%" stopColor="#BE123C" stopOpacity={0.0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                        <XAxis 
+                          dataKey="displayDate" 
+                          stroke="#94A3B8" 
+                          fontSize={9} 
+                          tickLine={false}
+                          dy={6}
+                          style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: "600" }}
+                        />
+                        <YAxis 
+                          stroke="#94A3B8" 
+                          fontSize={9} 
+                          tickLine={false}
+                          dx={-4}
+                          style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: "600" }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: "#1E293B", 
+                            borderColor: "#334155", 
+                            borderRadius: "12px", 
+                            color: "white",
+                            fontFamily: "Inter, sans-serif",
+                            fontSize: "11px",
+                            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)"
+                          }}
+                          labelStyle={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", fontWeight: "700", color: "#FDA4AF", marginBottom: "3px" }}
+                          itemStyle={{ color: "#FFFFFF", fontWeight: "800", padding: "0" }}
+                          formatter={(value) => [
+                            chartProduct === "invoerbeurten" ? `${value} beurten` : `${value} kg`, 
+                            chartProduct === "invoerbeurten" ? "Invoerbeurten" : "Totaal Volume"
+                          ]}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="total" 
+                          stroke="#BE123C" 
+                          strokeWidth={2.5}
+                          fillOpacity={1} 
+                          fill="url(#colorQuantity)" 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Navigation button link directly to the full database list */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode("database");
+                    setTablePage(1);
+                  }}
+                  className="w-full py-3 px-4 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100/65 text-slate-700 font-extrabold text-xs transition-all flex items-center justify-center gap-2 outline-none cursor-pointer"
+                  id="direct-to-database-btn"
+                >
+                  <Database className="w-4 h-4 text-slate-500" />
+                  <span>Blader Complete Database ({records.length} records)</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* ================= VIEW 2: COMPLETE DATABASE SPREADSHEET TABLE ================= */}
+          {viewMode === "database" && (
+            <div className="space-y-4" id="database-panel-view">
+              
+              {/* Database filtering tools */}
+              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3 sm:p-4 space-y-3 shadow-5xs" id="table-filters-container">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600 font-mono">Database Filters</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="text-[10px] text-rose-700 hover:underline font-bold flex items-center gap-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                    Wis filters
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {/* Filter: Vuller */}
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-wider text-slate-400 mb-0.5 font-mono">Wie (Vuller)</label>
+                    <select
+                      value={tableFilterFiller}
+                      onChange={(e) => { setTableFilterFiller(e.target.value); setTablePage(1); }}
+                      className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700"
+                    >
+                      <option value="">Alle vullers</option>
+                      {uniqueFillers.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Filter: Product */}
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-wider text-slate-400 mb-0.5 font-mono">Producttype</label>
+                    <select
+                      value={tableFilterProduct}
+                      onChange={(e) => { setTableFilterProduct(e.target.value); setTablePage(1); }}
+                      className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700"
+                    >
+                      <option value="">Alle producten</option>
+                      {uniqueProducts.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Filter: Month (MM/YYYY) */}
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-wider text-slate-400 mb-0.5 font-mono">Invoermaand</label>
+                    <select
+                      value={tableFilterMonth}
+                      onChange={(e) => { setTableFilterMonth(e.target.value); setTablePage(1); }}
+                      className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700"
+                    >
+                      <option value="">Alle maanden</option>
+                      {uniqueMonths.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Period Selector block side-by-side */}
+                <div className="grid grid-cols-2 gap-2.5 border-t border-slate-150 pt-2.5">
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-wider text-slate-400 mb-0.5 font-mono">Begindatum</label>
+                    <input
+                      type="date"
+                      value={tableFilterBeginDate}
+                      onChange={(e) => { setTableFilterBeginDate(e.target.value); setTablePage(1); }}
+                      className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2.5 text-xs font-medium focus:outline-none focus:border-[#BE123C] text-slate-700 shadow-5xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-black uppercase tracking-wider text-slate-400 mb-0.5 font-mono">Einddatum</label>
+                    <input
+                      type="date"
+                      value={tableFilterEndDate}
+                      onChange={(e) => { setTableFilterEndDate(e.target.value); setTablePage(1); }}
+                      className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2.5 text-xs font-medium focus:outline-none focus:border-[#BE123C] text-slate-700 shadow-5xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Result Counters */}
+              <div className="flex justify-between items-center text-[10px] font-mono font-semibold px-1 text-slate-500">
+                <span>Gevonden: {filteredDatabaseRecords.length} records</span>
+                {filteredDatabaseRecords.length > 0 && (
+                  <span>Pagina {tablePage} van {totalPages}</span>
+                )}
+              </div>
+
+              {/* Content representation */}
+              {filteredDatabaseRecords.length === 0 ? (
+                <div className="bg-slate-50 border border-slate-150 rounded-2xl p-10 text-center space-y-2 text-slate-400 max-w-sm mx-auto">
+                  <Search className="w-8 h-8 opacity-45 mx-auto" />
+                  <p className="text-xs font-bold text-slate-600">Geen overeenkomende records</p>
+                  <p className="text-[10px] text-slate-400 leading-normal">
+                    Pas uw actieve filters aan om de records te bladeren. Click op "Wis filters" om te resetten.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  
+                  {/* DESKTOP VIEW: HTML Traditional Table (hidden on phone, shown on sm+) */}
+                  <div className="hidden sm:block overflow-hidden rounded-xl border border-slate-200 shadow-6xs bg-white">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono font-bold uppercase tracking-wider text-[10px]">
+                          <th className="py-2.5 px-3">Datum/Tijd</th>
+                          <th className="py-2.5 px-2">Vuller</th>
+                          <th className="py-2.5 px-2">Producttype</th>
+                          <th className="py-2.5 px-2 text-right">Aantal</th>
+                          <th className="py-2.5 px-3 text-center">Actie</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {paginatedRecords.map((r) => (
+                          <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-2 px-3 font-mono font-medium text-slate-500 text-[10px]">
+                              {r.inputDate} <span className="opacity-60">{r.inputTime}</span>
+                            </td>
+                            <td className="py-2 px-2 text-slate-800 font-semibold truncate max-w-[120px]" title={r.inputterName}>
+                              {r.inputterName}
+                            </td>
+                            <td className="py-2 px-2 text-slate-700 capitalize font-medium">
+                              {r.productType}
+                            </td>
+                            <td className="py-2 px-2 text-right font-black text-rose-700 font-mono text-sm">
+                              {r.productQuantity}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRecord(r.id, `${r.inputterName}: ${r.productQuantity}x ${r.productType} (${r.inputDate})`)}
+                                className="text-slate-400 hover:text-[#BE123C] p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer inline-flex items-center"
+                                title="Verwijderen"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* MOBILE IPHONE OPTIMIZED VIEW: Touch-perfect stack cards (shown on phone, hidden on sm+) */}
+                  <div className="block sm:hidden space-y-2">
+                    {paginatedRecords.map((r) => (
+                      <div 
+                        key={r.id}
+                        className="p-3 bg-white border border-slate-150 rounded-xl space-y-2 flex items-center justify-between gap-3 shadow-6xs active:scale-[0.99] transition-transform"
+                      >
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-md font-bold font-mono text-slate-500 leading-none">
+                              {r.inputDate} {r.inputTime}
+                            </span>
+                            <span className="text-[10px] text-slate-400 truncate max-w-[120px] font-medium" title={r.userEmail}>
+                              {r.userEmail}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-baseline gap-1.5 leading-none">
+                            <h4 className="text-xs font-black text-slate-800 truncate capitalize">
+                              {r.productType}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center gap-1 text-[11px] text-slate-600">
+                            <User className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="font-semibold truncate">{r.inputterName}</span>
+                          </div>
+                        </div>
+
+                        {/* Quantity and Delete layout on right */}
+                        <div className="flex items-center gap-2.5 shrink-0 pl-1">
+                          <div className="text-right">
+                            <span className="block text-[8px] font-bold font-mono text-slate-400 uppercase tracking-widest leading-none">Aantal</span>
+                            <span className="text-lg font-black text-[#BE123C] font-mono leading-none mt-1 inline-block">
+                              {r.productQuantity}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRecord(r.id, `${r.inputterName}: ${r.productQuantity}x ${r.productType} (${r.inputDate})`)}
+                            className="w-9 h-9 border border-slate-100 bg-slate-50 text-slate-450 hover:bg-rose-50 hover:text-[#BE123C] p-1.5 rounded-full transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+                            title="Verwijderen"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* PAGINATION CONTROLS */}
+                  {totalPages > 1 && (
+                    <div className="flex justify-between items-center bg-white border border-slate-150 rounded-xl p-2 select-none">
+                      <button
+                        type="button"
+                        onClick={() => setTablePage(prev => Math.max(prev - 1, 1))}
+                        disabled={tablePage === 1}
+                        className="px-3 py-1.5 border border-slate-200/80 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Vorige</span>
+                      </button>
+                      
+                      <span className="text-[10px] font-mono font-bold text-slate-500">
+                        {tablePage} / {totalPages}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => setTablePage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={tablePage === totalPages}
+                        className="px-3 py-1.5 border border-slate-200/80 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        <span>Volgende</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Action row back button */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("dashboard")}
+                      className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50 text-[#BE123C] hover:bg-rose-100/60 font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                      <span>Terug naar Evolutiegrafiek & Trends</span>
+                    </button>
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
