@@ -18,7 +18,8 @@ import {
   ArrowRight,
   Info,
   CalendarDays,
-  AlertTriangle
+  AlertTriangle,
+  Clock
 } from "lucide-react";
 import { 
   AreaChart, 
@@ -30,17 +31,36 @@ import {
   ResponsiveContainer 
 } from "recharts";
 import { RecordRow } from "../types";
+import { getRecordsDirect, deleteRecordDirect, clearAllRecordsDirect, getCorrespondencesDirect } from "../lib/firestoreService";
 
-// Helper to parse Dutch date of format DD-MM-YYYY
+const PRODUCT_TYPES = [
+  { dbName: "aardbeien groot", displayName: "Aardbeien groot" },
+  { dbName: "aardbeien klein", displayName: "Aardbeien klein" },
+  { dbName: "san marzano", displayName: "San Marzano" },
+  { dbName: "snoep rood", displayName: "Snoep rood" },
+  { dbName: "snoep mix", displayName: "Snoep mix" },
+  { dbName: "confituur", displayName: "Confituur" }
+];
+
+// Helper to parse Dutch date of format DD-MM-YYYY with dynamic optimization cache
+const dutchDateCache = new Map<string, Date>();
 const parseDutchDate = (dateStr: string): Date => {
+  if (!dateStr) return new Date();
+  const cached = dutchDateCache.get(dateStr);
+  if (cached) return cached;
+  
   const parts = dateStr.split("-");
   if (parts.length === 3) {
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1; // 0-indexed
     const year = parseInt(parts[2], 10);
-    return new Date(year, month, day);
+    const d = new Date(year, month, day);
+    dutchDateCache.set(dateStr, d);
+    return d;
   }
-  return new Date();
+  const d = new Date();
+  dutchDateCache.set(dateStr, d);
+  return d;
 };
 
 // Helper to format Date into DD-MM-YYYY Dutch format
@@ -86,6 +106,151 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
   const [isClearing, setIsClearing] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
 
+  const getWeekNumber = (d: Date): number => {
+    const date = new Date(d.getTime());
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+    const week1 = new Date(date.getFullYear(), 0, 4);
+    return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000
+                          - 3 + (week1.getDay() + 6) % 7) / 7);
+  };
+
+  const parseDateParts = (dateStr: string) => {
+    if (!dateStr) return { year: 2026, month: 6, week: 23 };
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      const d = new Date(year, month - 1, day);
+      return { year, month, week: getWeekNumber(d) };
+    }
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1, week: getWeekNumber(now) };
+  };
+
+  const handleExport = (type: "volledig" | "recent") => {
+    const lastExportTs = Number(localStorage.getItem("last_export_timestamp")) || 0;
+    
+    // Sort by timestamp descending
+    const sortedRecords = [...records].sort((a, b) => {
+      const tsA = a.timestamp || 0;
+      const tsB = b.timestamp || 0;
+      return tsB - tsA;
+    });
+
+    // Filter if recent
+    const filteredRecords = type === "recent"
+      ? sortedRecords.filter(r => (r.timestamp || 0) > lastExportTs)
+      : sortedRecords;
+
+    if (filteredRecords.length === 0) {
+      if (type === "recent") {
+        alert("Geen nieuwe waarnemingen sinds de laatste export.");
+      } else {
+        alert("Geen gegevens beschikbaar om te exporteren.");
+      }
+      return;
+    }
+
+    let csvContent = "sep=;\r\n";
+    csvContent += "vuller;Date;Year;Month;Week;Hour;Producttype;Product;Eenheden;Gewicht(kg);Prijs (/kg);Omzet;Aardbeiras;temperature;Opmerking\r\n";
+
+    filteredRecords.forEach((r) => {
+      const vuller = r.vuller || r.inputterName || "";
+      const dateField = r.Date || r.inputDate || "";
+      const hourField = r.Hour || r.inputTime || "";
+      const productTypeField = r.Producttype || r.productType || "";
+      
+      const parsedDate = parseDateParts(dateField);
+      const yr = r.Year !== undefined && r.Year !== null ? r.Year : parsedDate.year;
+      const mt = r.Month !== undefined && r.Month !== null ? r.Month : parsedDate.month;
+      const wk = r.Week !== undefined && r.Week !== null ? r.Week : parsedDate.week;
+      
+      let productCategory = r.Product || "";
+      if (!productCategory) {
+        const typeLower = productTypeField.toLowerCase();
+        if (typeLower.includes("aardbeien")) {
+          productCategory = "Aardbei";
+        } else if (typeLower.includes("san marzano") || typeLower.includes("snoep") || typeLower.includes("tomaat")) {
+          productCategory = "Tomaat";
+        } else {
+          productCategory = "Confituur";
+        }
+      }
+      
+      let eenheden = r.Eenheden !== undefined && r.Eenheden !== null ? r.Eenheden : null;
+      let gewicht = r["Gewicht(kg)"] !== undefined && r["Gewicht(kg)"] !== null ? r["Gewicht(kg)"] : null;
+      let prijsPerKg = r["Prijs (/kg)"] !== undefined && r["Prijs (/kg)"] !== null ? r["Prijs (/kg)"] : null;
+      let omzet = r.Omzet !== undefined && r.Omzet !== null ? r.Omzet : null;
+      let ras = r.Aardbeiras || "";
+      let temperature = r.temperature !== undefined && r.temperature !== null ? r.temperature : (r.predictedTemperature !== undefined && r.predictedTemperature !== null ? r.predictedTemperature : 15);
+
+      if (eenheden === null) {
+        const isCrate = productTypeField.toLowerCase().includes("(plateau)") || productTypeField.toLowerCase().includes("plateau") || productTypeField.toLowerCase().includes("(kisten)") || productTypeField.toLowerCase().includes("kisten");
+        const multiplier = isCrate ? 10.0 : 1.0;
+        eenheden = (Number(r.productQuantity) || 0) * multiplier;
+      }
+
+      if (gewicht === null) {
+        const bakjeToKg = productTypeField.toLowerCase().includes("tomaat") || productTypeField.toLowerCase().includes("marzano") || productTypeField.toLowerCase().includes("snoep")
+          ? 0.5
+          : 0.5;
+        gewicht = Math.round(eenheden * bakjeToKg * 100) / 100;
+      }
+
+      if (prijsPerKg === null) {
+        let unitPrice = r.unitPrice !== undefined ? r.unitPrice : r.totalPrice / (r.productQuantity || 1);
+        if (isNaN(unitPrice) || !isFinite(unitPrice)) unitPrice = 4.5;
+        const bakjeToKg = productTypeField.toLowerCase().includes("tomaat") || productTypeField.toLowerCase().includes("marzano") || productTypeField.toLowerCase().includes("snoep")
+          ? 0.5
+          : 0.5;
+        prijsPerKg = Math.round((unitPrice / bakjeToKg) * 100) / 100;
+      }
+
+      if (omzet === null) {
+        omzet = r.totalPrice !== undefined ? r.totalPrice : Math.round(gewicht * prijsPerKg * 100) / 100;
+      }
+      
+      const escVuller = `"${vuller.replace(/"/g, '""')}"`;
+      const escDate = `"${dateField.replace(/"/g, '""')}"`;
+      const escHour = `"${hourField.replace(/"/g, '""')}"`;
+      const escProductType = `"${productTypeField.replace(/"/g, '""')}"`;
+      const escProduct = `"${productCategory.replace(/"/g, '""')}"`;
+      const escRas = `"${ras.replace(/"/g, '""')}"`;
+
+      const formattedEenheden = `${eenheden}`;
+      const formattedGewicht = `${Number(gewicht).toFixed(2)}`;
+      const formattedPrijsPerKg = `${Number(prijsPerKg).toFixed(2)}`;
+      const formattedOmzet = `${Number(omzet).toFixed(2)}`;
+      const formattedTemp = `${Number(temperature).toFixed(1)}`;
+      const commentVal = r.comment || r.Opmerking || "";
+      const escComment = `"${commentVal.replace(/"/g, '""')}"`;
+
+      csvContent += `${escVuller};${escDate};${yr};${mt};${wk};${escHour};${escProductType};${escProduct};${formattedEenheden};${formattedGewicht};${formattedPrijsPerKg};${formattedOmzet};${escRas};${formattedTemp};${escComment}\r\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    
+    const filename = type === "recent"
+      ? "verkoopautomaat_recent_export.csv"
+      : "verkoopautomaat_volledige_export.csv";
+      
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Save timestamp of last export only if it was a recent export
+    if (type === "recent") {
+      localStorage.setItem("last_export_timestamp", Date.now().toString());
+    }
+  };
+
   const handleClearAllDatabase = async () => {
     if (clearStep === 2 && clearWord !== "WISSEN") {
       setClearError("Type a.u.b. exact het woord 'WISSEN' om door te gaan.");
@@ -94,6 +259,22 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
     setIsClearing(true);
     setClearError(null);
     try {
+      let directSuccess = false;
+      try {
+        await clearAllRecordsDirect();
+        directSuccess = true;
+      } catch (directErr) {
+        console.warn("Direct Firestore clear failed, falling back to server API:", directErr);
+      }
+
+      if (directSuccess) {
+        setClearStep(0);
+        setClearWord("");
+        await fetchRecords(); // Refresh data
+        setIsClearing(false);
+        return;
+      }
+
       const res = await fetch("/api/admin/clear-all", {
         method: "POST"
       });
@@ -132,6 +313,17 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
     setIsLoading(true);
     setError(null);
     try {
+      try {
+        const directData = await getRecordsDirect();
+        if (directData && directData.length > 0) {
+          setRecords(directData);
+          setIsLoading(false);
+          return;
+        }
+      } catch (directErr) {
+        console.warn("Direct Firestore fetchRecords failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/records");
       if (!res.ok) {
         throw new Error("Mislukt om databasegegevens op te halen.");
@@ -150,12 +342,26 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
     fetchRecords();
     
     // Fetch volume correspondences
-    fetch("/api/correspondences")
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data) setCorrespondences(data);
-      })
-      .catch(e => console.error("Fout bij ophalen van correspondenties:", e));
+    const fetchCorrespondencesData = async () => {
+      try {
+        const directCorr = await getCorrespondencesDirect();
+        if (directCorr) {
+          setCorrespondences(directCorr);
+          return;
+        }
+      } catch (directErr) {
+        console.warn("Direct correspondences fetch failed, falling back to server API:", directErr);
+      }
+
+      fetch("/api/correspondences")
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) setCorrespondences(data);
+        })
+        .catch(e => console.error("Fout bij ophalen van correspondenties:", e));
+    };
+
+    fetchCorrespondencesData();
   }, []);
 
   // Trigger delete confirmation modal
@@ -171,6 +377,17 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
     setDeleteError(null);
 
     try {
+      try {
+        await deleteRecordDirect(recordToDelete.id);
+        setRecords(prev => prev.filter(r => r.id !== recordToDelete.id));
+        setDeleteConfirmOpen(false);
+        setRecordToDelete(null);
+        setIsDeleting(false);
+        return;
+      } catch (directErr) {
+        console.warn("Direct Firestore delete failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch(`/api/records/${recordToDelete.id}`, {
         method: "DELETE"
       });
@@ -255,16 +472,11 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
         const prodLower = tableFilterProduct.trim().toLowerCase();
         const rTypeLower = (r.productType || "").trim().toLowerCase();
         
-        if (prodLower === "aardbeien groot") {
-          if (!rTypeLower.includes("aardbeien groot") && !rTypeLower.includes("aardbeiden groot")) return false;
-        } else if (prodLower === "aardbeien klein") {
-          if (!rTypeLower.includes("aardbeien klein") && !rTypeLower.includes("aardbeiden klein")) return false;
-        } else if (prodLower === "kerstomaten") {
-          if (!rTypeLower.includes("kerstomaten") && !rTypeLower.includes("kerstomaat") && !rTypeLower.includes("bekers")) return false;
-        } else {
-          // Fallback exact match
-          if (r.productType !== tableFilterProduct) return false;
-        }
+        const isMatch = rTypeLower.startsWith(prodLower) || 
+                        (prodLower === "aardbeien groot" && rTypeLower.startsWith("aardbeiden groot")) ||
+                        (prodLower === "aardbeien klein" && rTypeLower.startsWith("aardbeiden klein"));
+        
+        if (!isMatch) return false;
       }
       // Month (MM/YYYY) filter
       if (tableFilterMonth) {
@@ -362,28 +574,18 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
       // Quantify in kilograms if geselecteerd product matches
       const typeLower = (r.productType || "").toLowerCase();
       
-      let isMatch = false;
-      if (chartProduct === "aardbeien groot" && (typeLower.startsWith("aardbeien groot") || typeLower.startsWith("aardbeiden groot"))) {
-        isMatch = true;
-      } else if (chartProduct === "aardbeien klein" && (typeLower.startsWith("aardbeien klein") || typeLower.startsWith("aardbeiden klein"))) {
-        isMatch = true;
-      } else if (chartProduct === "kerstomaten" && (typeLower.startsWith("kerstomaten") || typeLower.startsWith("kers tomaten") || typeLower.startsWith("kerstomaat"))) {
-        isMatch = true;
-      }
+      const isMatch = typeLower.startsWith(chartProduct.toLowerCase()) || 
+                      (chartProduct === "aardbeien groot" && typeLower.startsWith("aardbeiden groot")) ||
+                      (chartProduct === "aardbeien klein" && typeLower.startsWith("aardbeiden klein"));
 
       if (isMatch) {
-        const isCrate = typeLower.includes("(kisten)") || typeLower.includes("kisten") || typeLower.includes("(dozen)") || typeLower.includes("dozen");
+        const isBulk = typeLower.includes("(plateau)") || typeLower.includes("plateau") || typeLower.includes("(kisten)") || typeLower.includes("kisten") || typeLower.includes("(dozen)") || typeLower.includes("dozen");
         
         let weightFactor = 0.5;
-        if (chartProduct === "aardbeien groot" || chartProduct === "aardbeien klein") {
-          const kistToBakjes = correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : 10.0;
-          const bakjeToKg = correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : 0.5;
-          weightFactor = isCrate ? (kistToBakjes * bakjeToKg) : bakjeToKg;
-        } else if (chartProduct === "kerstomaten") {
-          const doosToBakjes = correspondences["doos_kerstomaten_to_bakjes"] !== undefined ? correspondences["doos_kerstomaten_to_bakjes"] : 10.0;
-          const bakjeToKg = correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : 0.5;
-          weightFactor = isCrate ? (doosToBakjes * bakjeToKg) : bakjeToKg;
-        }
+        const kistToBakjes = correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : 10.0;
+        const bakjeToKg = correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : 0.5;
+        
+        weightFactor = isBulk ? (kistToBakjes * bakjeToKg) : bakjeToKg;
 
         existing.total += (Number(r.productQuantity) || 0) * weightFactor;
       }
@@ -545,9 +747,9 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                       onChange={(e) => setChartProduct(e.target.value)}
                       className="w-full bg-white border border-slate-200/80 rounded-xl py-2 px-3 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700 shadow-5xs"
                     >
-                      <option value="aardbeien groot">Aardbeien groot (kg)</option>
-                      <option value="aardbeien klein">Aardbeien klein (kg)</option>
-                      <option value="kerstomaten">Kerstomaten (kg)</option>
+                      {PRODUCT_TYPES.map(p => (
+                        <option key={p.dbName} value={p.dbName}>{p.displayName} (kg)</option>
+                      ))}
                       <option value="invoerbeurten">Aantal daily 'invoerbeurten'</option>
                     </select>
                   </div>
@@ -758,9 +960,9 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                       className="w-full bg-white border border-slate-200/80 rounded-lg py-1.5 px-2 text-xs font-semibold focus:outline-none focus:border-[#BE123C] text-slate-700"
                     >
                       <option value="">Alle producten</option>
-                      <option value="aardbeien groot">Aardbeien groot</option>
-                      <option value="aardbeien klein">Aardbeien klein</option>
-                      <option value="kerstomaten">Kerstomaten</option>
+                      {PRODUCT_TYPES.map(p => (
+                        <option key={p.dbName} value={p.dbName}>{p.displayName}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -812,34 +1014,27 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  {/* Download CSV Button */}
-                  <a
-                    href="/api/export"
-                    download="verkoopautomaat_geschiedenis.csv"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100/75 text-xs font-bold font-mono shadow-5xs transition-colors decoration-transparent"
-                    title="Exporteer en download database als CSV"
-                  >
-                    <Download className="w-3.5 h-3.5 shrink-0" />
-                    <span>Download CSV</span>
-                  </a>
-
-                  {/* Clear All Data Button */}
-                  {serverUser?.isAdmin && (
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  {/* Export Data buttons */}
+                  <div className="flex items-center gap-1.5 bg-slate-100/60 border border-slate-200/50 rounded-xl px-2.5 py-1 shadow-5xs">
+                    <span className="text-[9px] font-bold text-slate-500 font-mono uppercase tracking-wider px-1 shrink-0">Export data:</span>
                     <button
-                      type="button"
-                      onClick={() => {
-                        setClearStep(1);
-                        setClearWord("");
-                        setClearError(null);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100/75 text-xs font-bold font-mono shadow-5xs transition-colors cursor-pointer"
-                      title="Wis de volledige database"
+                      onClick={() => handleExport("volledig")}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100/75 text-xs font-bold font-mono transition-colors cursor-pointer shrink-0"
+                      title="Exporteer alle waarnemingen naar een CSV-bestand"
                     >
-                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Wis Database</span>
+                      <Download className="w-3 h-3 shrink-0" />
+                      <span>Volledig</span>
                     </button>
-                  )}
+                    <button
+                      onClick={() => handleExport("recent")}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 text-white hover:bg-slate-900 text-xs font-bold font-mono transition-colors cursor-pointer shrink-0"
+                      title="Exporteer enkel de nieuwste waarnemingen sinds de laatste download"
+                    >
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span>Recent</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -880,7 +1075,14 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                               {r.inputterName}
                             </td>
                             <td className="py-2 px-2 text-slate-700 capitalize font-medium">
-                              {r.productType}
+                              <div className="flex flex-col">
+                                <span>{r.productType}</span>
+                                {(r.comment || r.Opmerking) && (
+                                  <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100/60 rounded px-1.5 py-0.5 mt-0.5 w-max font-mono italic max-w-[180px] truncate" title={r.comment || r.Opmerking}>
+                                    "{r.comment || r.Opmerking}"
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-2 px-2 text-right font-black text-rose-700 font-mono text-sm">
                               {r.productQuantity}
@@ -932,6 +1134,12 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                               {r.productType}
                             </h4>
                           </div>
+
+                          {(r.comment || r.Opmerking) && (
+                            <div className="text-[10px] text-amber-600 bg-amber-50/70 border border-amber-100/60 rounded px-1.5 py-0.5 w-max font-mono italic max-w-[200px] truncate" title={r.comment || r.Opmerking}>
+                              "{r.comment || r.Opmerking}"
+                            </div>
+                          )}
 
                           <div className="flex items-center gap-1.5 flex-wrap py-0.5 font-mono text-[9px]">
                             {r.predictedTemperature !== undefined && r.predictedTemperature !== null && (
@@ -1014,6 +1222,28 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
                       <span>Terug naar Evolutiegrafiek & Trends</span>
                     </button>
                   </div>
+
+                  {/* Destructieve Beheerdersacties bottom block */}
+                  {serverUser?.isAdmin && (
+                    <div className="pt-6 mt-6 border-t border-slate-150 flex flex-col items-center justify-center gap-2">
+                      <p className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider">
+                        Geavanceerde Beheerdersopties
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClearStep(1);
+                          setClearWord("");
+                          setClearError(null);
+                        }}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-[#BE123C] font-extrabold text-xs transition-all cursor-pointer shadow-sm hover:shadow-md"
+                        title="Wis de volledige database"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0 text-[#BE123C]" />
+                        <span>Wis Database</span>
+                      </button>
+                    </div>
+                  )}
 
                 </div>
               )}

@@ -10,6 +10,8 @@ interface ConfirmationModalProps {
   inputDate: string;
   inputTime: string;
   products: ProductInput[];
+  selectedVarietyGroot: string;
+  selectedVarietyKlein: string;
   isSubmitting: boolean;
 }
 
@@ -21,11 +23,13 @@ export default function ConfirmationModal({
   inputDate,
   inputTime,
   products,
+  selectedVarietyGroot,
+  selectedVarietyKlein,
   isSubmitting,
 }: ConfirmationModalProps) {
   const totalBakjes = products.reduce((acc, p) => acc + p.quantityBakjes, 0);
-  const totalKisten = products.reduce((acc, p) => acc + p.quantityKisten, 0);
-  const hasAnyInput = totalBakjes > 0 || totalKisten > 0;
+  const totalPlateaus = products.reduce((acc, p) => acc + p.quantityKisten, 0);
+  const hasAnyInput = totalBakjes > 0 || totalPlateaus > 0;
 
   return (
     <AnimatePresence>
@@ -99,19 +103,29 @@ export default function ConfirmationModal({
                 </h4>
                 <div className="divide-y divide-slate-100 bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-inner">
                   {products.map((p) => {
-                    const defaultUnit = p.dbName === "kerstomaten" ? "bekers" : "bakjes";
+                    const defaultUnit = p.option2Label;
                     const hasInput = p.quantityBakjes > 0 || p.quantityKisten > 0;
+                    const isStrawberry = p.dbName.toLowerCase().startsWith("aardbeien");
+                    const variety = p.dbName.toLowerCase().includes("groot") ? selectedVarietyGroot : selectedVarietyKlein;
+
                     return (
                       <div 
                         key={p.id} 
                         className="flex flex-col p-3.5 hover:bg-slate-55/40 transition-colors gap-1.5"
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-start justify-between">
                           <div className="flex items-center gap-3">
                             <span className="text-xl shrink-0">{p.icon}</span>
-                            <span className="font-display font-semibold text-[#BE123C] text-sm">
-                              {p.displayName}
-                            </span>
+                            <div className="flex flex-col">
+                              <span className="font-display font-semibold text-[#BE123C] text-sm leading-tight">
+                                {p.displayName}
+                              </span>
+                              {isStrawberry && hasInput && (
+                                <span className="text-[10px] bg-rose-50 border border-rose-100 text-rose-700 px-1.5 py-0.5 rounded-md font-medium mt-0.5 w-max">
+                                  Ras: <span className="font-bold">{variety}</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                           {!hasInput && (
                             <span className="text-xs text-slate-350 font-mono">
@@ -121,16 +135,25 @@ export default function ConfirmationModal({
                         </div>
 
                         {hasInput && (
-                          <div className="flex flex-wrap gap-2 justify-end pl-9">
-                            {p.quantityBakjes > 0 && (
-                              <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-rose-50 text-[#BE123C] border border-[#BE123C]/20 flex items-center gap-1">
-                                {p.quantityBakjes} <span className="text-[10px] font-normal lowercase">{defaultUnit}</span>
-                              </span>
-                            )}
-                            {p.quantityKisten > 0 && (
-                              <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-500/25 flex items-center gap-1">
-                                {p.quantityKisten} <span className="text-[10px] font-normal lowercase">kisten</span>
-                              </span>
+                          <div className="space-y-1.5 pl-9">
+                            <div className="flex flex-wrap gap-2 justify-end">
+                              {p.quantityBakjes > 0 && (
+                                <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-rose-50 text-[#BE123C] border border-[#BE123C]/20 flex items-center gap-1">
+                                  {p.quantityBakjes} <span className="text-[10px] font-normal lowercase">{defaultUnit}</span>
+                                </span>
+                              )}
+                              {p.option1Label && p.quantityKisten > 0 && (
+                                <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-500/25 flex items-center gap-1">
+                                  {p.quantityKisten} <span className="text-[10px] font-normal lowercase">{p.option1Label}</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {p.comment && (
+                              <div className="text-[10px] bg-slate-50 border border-slate-150 rounded-lg px-2 py-1.5 text-slate-600 flex items-start gap-1 font-sans italic leading-normal">
+                                <span className="font-semibold text-slate-400 not-italic uppercase tracking-wider text-[8px] mt-0.5 shrink-0">Opmerking:</span>
+                                <span>"{p.comment}"</span>
+                              </div>
                             )}
                           </div>
                         )}
@@ -144,8 +167,8 @@ export default function ConfirmationModal({
               <div className="flex flex-col gap-1 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between px-2 text-sm text-slate-500 font-semibold">
                   <span>Totaal invoer:</span>
-                  <span className="font-medium text-slate-800 font-mono">
-                    {totalBakjes} beker(s)/bakje(s) & {totalKisten} kist(en)
+                  <span className="font-medium text-slate-800 font-mono text-xs xs:text-sm">
+                    {totalBakjes} beker(s)/bakje(s) & {totalPlateaus} plateau(s)
                   </span>
                 </div>
               </div>

@@ -28,7 +28,9 @@ import {
   Eye,
   EyeOff,
   Coins,
-  Scale
+  Scale,
+  Folder,
+  Database
 } from "lucide-react";
 import { 
   onAuthStateChanged, 
@@ -39,7 +41,27 @@ import {
   createUserWithEmailAndPassword,
   updateProfile
 } from "firebase/auth";
-import { auth, googleProvider } from "@/src/lib/firebase";
+import { auth, googleProvider, db } from "@/src/lib/firebase";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { AppUser } from "./types";
+import {
+  saveRecordDirect,
+  getRecordsDirect,
+  getPricesDirect,
+  savePricesDirect,
+  getCorrespondencesDirect,
+  saveCorrespondencesDirect,
+  getGDriveFolderDirect,
+  saveGDriveFolderDirect,
+  getUsersDirect,
+  updateUserStatusDirect,
+  deleteUserDirect,
+  getAdminsDirect,
+  saveAdminDirect,
+  deleteAdminDirect,
+  getStrawberryVarietiesDirect,
+  saveStrawberryVarietiesDirect
+} from "./lib/firestoreService";
 import { ProductInput, RecordRow } from "./types";
 import ProductCard from "./components/ProductCard";
 import ConfirmationModal from "./components/ConfirmationModal";
@@ -53,6 +75,8 @@ const INITIAL_PRODUCTS: ProductInput[] = [
     displayName: "Aardbeien groot",
     quantityBakjes: 0,
     quantityKisten: 0,
+    option1Label: "Plateau",
+    option2Label: "Bakjes",
     icon: "🍓",
     color: "bg-rose-50",
     textColor: "text-rose-600",
@@ -66,6 +90,8 @@ const INITIAL_PRODUCTS: ProductInput[] = [
     displayName: "Aardbeien klein",
     quantityBakjes: 0,
     quantityKisten: 0,
+    option1Label: "Plateau",
+    option2Label: "Bakjes",
     icon: "🍓",
     color: "bg-rose-50/50",
     textColor: "text-pink-600",
@@ -74,15 +100,58 @@ const INITIAL_PRODUCTS: ProductInput[] = [
     max: 100
   },
   {
-    id: "cherry-tomato",
-    dbName: "kerstomaten",
-    displayName: "Kerstomaten",
+    id: "san-marzano",
+    dbName: "san marzano",
+    displayName: "San Marzano",
     quantityBakjes: 0,
     quantityKisten: 0,
+    option2Label: "Potje",
     icon: "🍅",
-    color: "bg-orange-50",
-    textColor: "text-orange-600",
-    accentColor: "#EA580C",
+    color: "bg-amber-50",
+    textColor: "text-amber-600",
+    accentColor: "#D97706",
+    step: 1,
+    max: 100
+  },
+  {
+    id: "snoep-rood",
+    dbName: "snoep rood",
+    displayName: "Snoep rood",
+    quantityBakjes: 0,
+    quantityKisten: 0,
+    option2Label: "Potje",
+    icon: "🍒",
+    color: "bg-red-50",
+    textColor: "text-red-600",
+    accentColor: "#DC2626",
+    step: 1,
+    max: 100
+  },
+  {
+    id: "snoep-mix",
+    dbName: "snoep mix",
+    displayName: "Snoep mix",
+    quantityBakjes: 0,
+    quantityKisten: 0,
+    option2Label: "Potje",
+    icon: "🍬",
+    color: "bg-violet-50",
+    textColor: "text-violet-600",
+    accentColor: "#7C3AED",
+    step: 1,
+    max: 100
+  },
+  {
+    id: "confituur",
+    dbName: "confituur",
+    displayName: "Confituur",
+    quantityBakjes: 0,
+    quantityKisten: 0,
+    option2Label: "Potje",
+    icon: "🍯",
+    color: "bg-yellow-50",
+    textColor: "text-yellow-600",
+    accentColor: "#CA8A04",
     step: 1,
     max: 100
   }
@@ -140,7 +209,10 @@ export default function App() {
   const [prices, setPrices] = useState<Record<string, number>>({
     "aardbeien groot": 4.5,
     "aardbeien klein": 3.0,
-    "kerstomaten": 2.5
+    "san marzano": 2.5,
+    "snoep rood": 2.5,
+    "snoep mix": 2.5,
+    "confituur": 4.0
   });
   const [isSavingPrices, setIsSavingPrices] = useState(false);
   const [pricesError, setPricesError] = useState<string | null>(null);
@@ -155,6 +227,25 @@ export default function App() {
   const [isSavingCorrespondences, setIsSavingCorrespondences] = useState(false);
   const [correspondencesError, setCorrespondencesError] = useState<string | null>(null);
   const [correspondencesSuccess, setCorrespondencesSuccess] = useState(false);
+
+  // Strawberry Varieties (Aardbeirassen) config state
+  const [strawberryVarieties, setStrawberryVarieties] = useState<string[]>(["Sonsation", "Karima", "Lady Emma", "Elsanta", "Sonata", "Korona", "Polka"]);
+  const [selectedVarietyGroot, setSelectedVarietyGroot] = useState<string>(() => {
+    return localStorage.getItem("last_selected_strawberry_variety_groot") || "Sonsation";
+  });
+  const [selectedVarietyKlein, setSelectedVarietyKlein] = useState<string>(() => {
+    return localStorage.getItem("last_selected_strawberry_variety_klein") || "Sonsation";
+  });
+  const [newVarietyInput, setNewVarietyInput] = useState("");
+  const [isSavingVarieties, setIsSavingVarieties] = useState(false);
+  const [varietiesError, setVarietiesError] = useState<string | null>(null);
+  const [varietiesSuccess, setVarietiesSuccess] = useState(false);
+  
+  // Simulated data migration states
+  const [isMigratingSimulated, setIsMigratingSimulated] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState<{ total: number; current: number } | null>(null);
+  const [migrationSuccess, setMigrationSuccess] = useState<string | null>(null);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
   
   // Modals & UI States
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -166,6 +257,58 @@ export default function App() {
   // Sync with express backend user authorization
   const syncServerUser = async (user: User) => {
     try {
+      // Direct Firestore first (durable bypass of sandbox)
+      try {
+        const emailNorm = (user.email || "").toLowerCase().trim();
+        const displayName = user.displayName || user.email?.split("@")[0] || "Gebruiker";
+
+        // Check administrators
+        const adminDocSnap = await getDoc(doc(db, "admins", emailNorm));
+        let isAdmin = adminDocSnap.exists() || emailNorm === "wouter.torfss@gmail.com";
+
+        // Auto bootstrap if Wouter
+        if (emailNorm === "wouter.torfss@gmail.com" && !adminDocSnap.exists()) {
+          await setDoc(doc(db, "admins", emailNorm), { email: emailNorm });
+        }
+
+        let userStatus: "pending" | "approved" | "rejected" = isAdmin ? "approved" : "pending";
+
+        // Check and sync user Registry
+        const userDocSnap = await getDoc(doc(db, "users", user.uid));
+        if (!userDocSnap.exists()) {
+          const newUser: AppUser = {
+            uid: user.uid,
+            email: emailNorm,
+            name: displayName,
+            status: userStatus,
+            createdAt: Date.now(),
+            provider: (user.providerData?.[0]?.providerId as any) || "google"
+          };
+          await setDoc(doc(db, "users", user.uid), newUser);
+        } else {
+          const uData = userDocSnap.data() as AppUser;
+          userStatus = isAdmin ? "approved" : uData.status;
+
+          // Admin role is auto approved
+          await updateDoc(doc(db, "users", user.uid), {
+            name: displayName,
+            status: userStatus,
+            provider: (user.providerData?.[0]?.providerId as any) || uData.provider
+          });
+        }
+
+        setServerUser({
+          email: emailNorm,
+          name: displayName,
+          status: userStatus,
+          isAdmin
+        });
+        setInputterName(displayName);
+        return; // Synchronized successfully, skip express server API call
+      } catch (directErr) {
+        console.warn("Direct Firestore auth sync failed, falling back to server API:", directErr);
+      }
+
       const response = await fetch("/api/auth/sync", {
         method: "POST",
         headers: {
@@ -265,6 +408,38 @@ export default function App() {
   // Fetch local prices and volume correspondences
   const fetchPricesAndCorrespondences = async () => {
     try {
+      // Direct Firestore first
+      try {
+        const directPrices = await getPricesDirect();
+        const directCorr = await getCorrespondencesDirect();
+        const directVarieties = await getStrawberryVarietiesDirect();
+        
+        if (directVarieties && directVarieties.length > 0) {
+          setStrawberryVarieties(directVarieties);
+          
+          const savedVarietyGroot = localStorage.getItem("last_selected_strawberry_variety_groot");
+          if (savedVarietyGroot && directVarieties.includes(savedVarietyGroot)) {
+            setSelectedVarietyGroot(savedVarietyGroot);
+          } else {
+            setSelectedVarietyGroot(directVarieties[0]);
+          }
+
+          const savedVarietyKlein = localStorage.getItem("last_selected_strawberry_variety_klein");
+          if (savedVarietyKlein && directVarieties.includes(savedVarietyKlein)) {
+            setSelectedVarietyKlein(savedVarietyKlein);
+          } else {
+            setSelectedVarietyKlein(directVarieties[0]);
+          }
+        }
+        if (directPrices && directCorr) {
+          setPrices(directPrices);
+          setCorrespondences(directCorr);
+          return; // Success!
+        }
+      } catch (directErr) {
+        console.warn("Direct prices/correspondences query failed, falling back to server API:", directErr);
+      }
+
       const resP = await fetch("/api/admin/prices");
       if (resP.ok) {
         const pData = await resP.json();
@@ -290,6 +465,21 @@ export default function App() {
     setIsUsersLoading(true);
     setAdminMgmtError(null);
     try {
+      // Direct Firestore first
+      try {
+        const directUsers = await getUsersDirect();
+        const directAdmins = await getAdminsDirect();
+        
+        if (directUsers && directUsers.length > 0) {
+          setUserList(directUsers);
+          setAdminList(directAdmins);
+          setIsUsersLoading(false);
+          return; // Success!
+        }
+      } catch (directErr) {
+        console.warn("Direct admins/users query failed, falling back to server API:", directErr);
+      }
+
       // 1. Fetch Users registry
       const userRes = await fetch(`/api/admin/users?adminEmail=${encodeURIComponent(serverUser.email)}`);
       if (userRes.ok) {
@@ -446,6 +636,17 @@ export default function App() {
     setPricesError(null);
     setPricesSuccess(false);
     try {
+      // Direct first
+      try {
+        await savePricesDirect(prices);
+        setPricesSuccess(true);
+        setTimeout(() => setPricesSuccess(false), 3000);
+        setIsSavingPrices(false);
+        return;
+      } catch (directErr) {
+        console.warn("Direct save prices failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -475,6 +676,17 @@ export default function App() {
     setCorrespondencesError(null);
     setCorrespondencesSuccess(false);
     try {
+      // Direct first
+      try {
+        await saveCorrespondencesDirect(correspondences);
+        setCorrespondencesSuccess(true);
+        setTimeout(() => setCorrespondencesSuccess(false), 3000);
+        setIsSavingCorrespondences(false);
+        return;
+      } catch (directErr) {
+        console.warn("Direct save correspondences failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/correspondences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -494,6 +706,115 @@ export default function App() {
       setCorrespondencesError("Kan geen verbinding maken met de server.");
     } finally {
       setIsSavingCorrespondences(false);
+    }
+  };
+
+  const handleAddVariety = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanInput = newVarietyInput.trim();
+    if (!cleanInput) return;
+    if (strawberryVarieties.map(v => v.toLowerCase()).includes(cleanInput.toLowerCase())) {
+      setVarietiesError("Dit aardbeiras bestaat al.");
+      return;
+    }
+    const updated = [...strawberryVarieties, cleanInput];
+    setIsSavingVarieties(true);
+    setVarietiesError(null);
+    setVarietiesSuccess(false);
+    try {
+      await saveStrawberryVarietiesDirect(updated);
+      setStrawberryVarieties(updated);
+      setNewVarietyInput("");
+      setVarietiesSuccess(true);
+      setTimeout(() => setVarietiesSuccess(false), 3000);
+    } catch (err: any) {
+      setVarietiesError(err.message || "Fout bij toevoegen ras.");
+    } finally {
+      setIsSavingVarieties(false);
+    }
+  };
+
+  const handleRemoveVariety = async (varietyToRemove: string) => {
+    const updated = strawberryVarieties.filter(v => v !== varietyToRemove);
+    setIsSavingVarieties(true);
+    setVarietiesError(null);
+    setVarietiesSuccess(false);
+    try {
+      await saveStrawberryVarietiesDirect(updated);
+      setStrawberryVarieties(updated);
+      setVarietiesSuccess(true);
+      setTimeout(() => setVarietiesSuccess(false), 3000);
+      
+      // Adjust selected variety if currently active
+      if (selectedVarietyGroot === varietyToRemove) {
+        if (updated.length > 0) {
+          setSelectedVarietyGroot(updated[0]);
+          localStorage.setItem("last_selected_strawberry_variety_groot", updated[0]);
+        } else {
+          setSelectedVarietyGroot("");
+          localStorage.removeItem("last_selected_strawberry_variety_groot");
+        }
+      }
+      if (selectedVarietyKlein === varietyToRemove) {
+        if (updated.length > 0) {
+          setSelectedVarietyKlein(updated[0]);
+          localStorage.setItem("last_selected_strawberry_variety_klein", updated[0]);
+        } else {
+          setSelectedVarietyKlein("");
+          localStorage.removeItem("last_selected_strawberry_variety_klein");
+        }
+      }
+    } catch (err: any) {
+      setVarietiesError(err.message || "Fout bij verwijderen ras.");
+    } finally {
+      setIsSavingVarieties(false);
+    }
+  };
+
+  const handleMigrateSimulatedData = async () => {
+    setIsMigratingSimulated(true);
+    setMigrationProgress(null);
+    setMigrationSuccess(null);
+    setMigrationError(null);
+    try {
+      // 1. Fetch raw local simulated records from server
+      const res = await fetch("/api/admin/local-records-raw");
+      if (!res.ok) {
+        throw new Error("Mislukt om lokale gesimuleerde data van de server op te halen.");
+      }
+      const localRecords: RecordRow[] = await res.json();
+      if (!localRecords || localRecords.length === 0) {
+        setMigrationSuccess("Er is geen gesimuleerde data gevonden (al leeg of reeds gesynchroniseerd).");
+        setIsMigratingSimulated(false);
+        return;
+      }
+
+      // 2. Query currently existing records in firestore to skip duplicate insertion
+      const existingFirestoreRecords = await getRecordsDirect();
+      const existingIds = new Set(existingFirestoreRecords.map(r => r.id));
+
+      const toImport = localRecords.filter(r => !existingIds.has(r.id));
+      if (toImport.length === 0) {
+        setMigrationSuccess("Gereed! Alle gesimuleerde records staan al in uw Firestore database.");
+        setIsMigratingSimulated(false);
+        return;
+      }
+
+      setMigrationProgress({ total: toImport.length, current: 0 });
+
+      // 3. Batch-upload to Firestore with progressive update feedback
+      for (let i = 0; i < toImport.length; i++) {
+        const record = toImport[i];
+        await saveRecordDirect(record);
+        setMigrationProgress({ total: toImport.length, current: i + 1 });
+      }
+
+      setMigrationSuccess(`Succes! ${toImport.length} gesimuleerde records zijn succesvol geïmporteerd naar uw live Firestore database!`);
+    } catch (err: any) {
+      console.error("Fout bij migratie van simulated data:", err);
+      setMigrationError(err?.message || "Fout bij de overdracht.");
+    } finally {
+      setIsMigratingSimulated(false);
     }
   };
 
@@ -531,6 +852,12 @@ export default function App() {
     );
   };
 
+  const handleProductCommentChange = (id: string, comment: string) => {
+    setProducts(prev => 
+      prev.map(p => p.id === id ? { ...p, comment } : p)
+    );
+  };
+
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -563,19 +890,27 @@ export default function App() {
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const itemsPayload: Array<{ productType: string; productQuantity: number }> = [];
+    const nonZeroProductComments = products
+      .filter(p => p.comment && p.comment.trim())
+      .map(p => `(${p.displayName}) ${p.comment.trim()}`);
+    const mergedCommentsString = nonZeroProductComments.join(" | ");
+
+    const itemsPayload: Array<{ productType: string; productQuantity: number; comment?: string }> = [];
     products.forEach(p => {
-      const defaultUnit = p.dbName === "kerstomaten" ? "bekers" : "bakjes";
+      const opt2Label = p.option2Label ? p.option2Label.toLowerCase() : "bakjes";
+      const opt1Label = p.option1Label ? p.option1Label.toLowerCase() : "plateau";
       if (p.quantityBakjes > 0) {
         itemsPayload.push({
-          productType: `${p.dbName} (${defaultUnit})`,
+          productType: `${p.dbName} (${opt2Label})`,
           productQuantity: p.quantityBakjes,
+          comment: mergedCommentsString
         });
       }
-      if (p.quantityKisten > 0) {
+      if (p.option1Label && p.quantityKisten > 0) {
         itemsPayload.push({
-          productType: `${p.dbName} (kisten)`,
+          productType: `${p.dbName} (${opt1Label})`,
           productQuantity: p.quantityKisten,
+          comment: mergedCommentsString
         });
       }
     });
@@ -585,6 +920,173 @@ export default function App() {
     const inputTimeFormatted = now.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
 
     try {
+      // 1. Direct Firestore submission first
+      try {
+        let priceConfig = prices;
+        let correspondenceConfig = correspondences;
+        
+        if (Object.keys(priceConfig).length === 0) {
+          priceConfig = (await getPricesDirect()) || {};
+        }
+        if (Object.keys(correspondenceConfig).length === 0) {
+          correspondenceConfig = (await getCorrespondencesDirect()) || {};
+        }
+
+        let temp: number | null = null;
+        try {
+          const parts = inputDateFormatted.split("-");
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, "0");
+            const month = parts[1].padStart(2, "0");
+            const year = parts[2];
+            const targetDateStr = `${year}-${month}-${day}`;
+            const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=51.0&longitude=4.5&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/Brussels`;
+            const weatherRes = await fetch(weatherUrl);
+            if (weatherRes.ok) {
+              const weatherDetails = await weatherRes.json();
+              if (weatherDetails?.daily?.time) {
+                const idx = weatherDetails.daily.time.indexOf(targetDateStr);
+                if (idx !== -1) {
+                  temp = weatherDetails.daily.temperature_2m_max[idx] || null;
+                }
+              }
+            }
+          }
+        } catch (weaErr) {
+          console.warn("Fout ophalen direct temperatuur:", weaErr);
+        }
+
+        const timestamp = Date.now();
+        
+        for (const item of itemsPayload) {
+          const typeLower = (item.productType || "").toLowerCase();
+          
+          // Match base product dynamically from existing definitions
+          const matchedProd = INITIAL_PRODUCTS.find(p => typeLower.startsWith(p.dbName));
+          const baseProduct = matchedProd ? matchedProd.dbName : "aardbeien groot";
+
+          const basePrice = priceConfig[baseProduct] !== undefined ? priceConfig[baseProduct] : 4.5;
+          const isBulk = typeLower.includes("(plateau)") || typeLower.includes("plateau") || typeLower.includes("(kisten)") || typeLower.includes("kisten");
+
+          let unitMultiplier = 1.0;
+          if (isBulk) {
+            unitMultiplier = Number(correspondenceConfig["kist_aardbeien_to_bakjes"]) || 10.0;
+          }
+
+          const calculatedUnitPrice = basePrice * unitMultiplier;
+          const totalPrice = Math.round((Number(item.productQuantity) || 0) * calculatedUnitPrice * 100) / 100;
+          const recordId = `${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
+
+          // Date parser & ISO Week number helpers
+          const getWeekNumber = (d: Date): number => {
+            const date = new Date(d.getTime());
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+            const week1 = new Date(date.getFullYear(), 0, 4);
+            return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000
+                                  - 3 + (week1.getDay() + 6) % 7) / 7);
+          };
+
+          const parseDateParts = (dateStr: string) => {
+            const parts = dateStr.split("-");
+            if (parts.length === 3) {
+              const day = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10);
+              const year = parseInt(parts[2], 10);
+              const d = new Date(year, month - 1, day);
+              return { year, month, week: getWeekNumber(d) };
+            }
+            const now = new Date();
+            return { year: now.getFullYear(), month: now.getMonth() + 1, week: getWeekNumber(now) };
+          };
+
+          const dateParts = parseDateParts(inputDateFormatted);
+
+          let productCategory = "Confituur";
+          const baseProductLower = baseProduct.toLowerCase();
+          if (baseProductLower.includes("aardbeien")) {
+            productCategory = "Aardbei";
+          } else if (baseProductLower.includes("san marzano") || baseProductLower.includes("snoep")) {
+            productCategory = "Tomaat";
+          } else if (baseProductLower.includes("confituur")) {
+            productCategory = "Confituur";
+          }
+
+          const multiplier = isBulk ? (Number(correspondenceConfig["kist_aardbeien_to_bakjes"]) || 10.0) : 1.0;
+          const eenheden = (Number(item.productQuantity) || 0) * multiplier;
+
+          const bakjeToKg = baseProductLower.includes("tomaat") || baseProductLower.includes("marzano") || baseProductLower.includes("snoep")
+            ? (Number(correspondenceConfig["bakje_kerstomaten_to_kg"]) || 0.5)
+            : (Number(correspondenceConfig["bakje_aardbeien_to_kg"]) || 0.5);
+          const gewicht = Math.round(eenheden * bakjeToKg * 100) / 100;
+
+          const prijsPerKg = Math.round((basePrice / bakjeToKg) * 100) / 100;
+          const omzet = Math.round(gewicht * prijsPerKg * 100) / 100;
+
+          const isStrawberryProduct = baseProductLower.includes("aardbeien");
+          let ras = "";
+          if (isStrawberryProduct) {
+            if (baseProductLower.includes("groot") || baseProductLower.includes("groote")) {
+              ras = selectedVarietyGroot;
+            } else if (baseProductLower.includes("klein")) {
+              ras = selectedVarietyKlein;
+            } else {
+              ras = selectedVarietyGroot;
+            }
+          }
+
+          const recordData: RecordRow = {
+            id: recordId,
+            // Standardized Altered Database Fields:
+            vuller: inputterName.trim(),
+            Date: inputDateFormatted,
+            Year: dateParts.year,
+            Month: dateParts.month,
+            Week: dateParts.week,
+            Hour: inputTimeFormatted,
+            Producttype: item.productType,
+            Product: productCategory,
+            Eenheden: eenheden,
+            "Gewicht(kg)": gewicht,
+            "Prijs (/kg)": prijsPerKg,
+            Omzet: omzet,
+            Aardbeiras: ras,
+            temperature: temp !== null ? temp : 15.0,
+            comment: item.comment || "",
+            Opmerking: item.comment || "",
+
+            // Backward compatibility fields:
+            inputterName: inputterName.trim(),
+            inputDate: inputDateFormatted,
+            inputTime: inputTimeFormatted,
+            productType: item.productType,
+            productQuantity: Number(item.productQuantity) || 0,
+            timestamp,
+            userEmail: firebaseUser?.email || "onbekend@bezentracker.be",
+            unitPrice: calculatedUnitPrice,
+            totalPrice,
+            predictedTemperature: temp !== null ? temp : 15.0
+          };
+
+          await saveRecordDirect(recordData);
+        }
+
+        setSubmitSuccess(true);
+        setIsConfirmOpen(false);
+        setShowSuccessToast(true);
+        
+        setProducts(prev => prev.map(p => ({ ...p, quantityBakjes: 0, quantityKisten: 0, comment: "" })));
+        
+        setTimeout(() => {
+          setShowSuccessToast(false);
+        }, 4000);
+        
+        setIsSubmitting(false);
+        return; // Complete!
+      } catch (directErr) {
+        console.warn("Direct Firestore record submission failed, falling back to server API POST:", directErr);
+      }
+
       const response = await fetch("/api/records", {
         method: "POST",
         headers: {
@@ -609,8 +1111,8 @@ export default function App() {
       setIsConfirmOpen(false);
       setShowSuccessToast(true);
       
-      // Reset quantities
-      setProducts(prev => prev.map(p => ({ ...p, quantityBakjes: 0, quantityKisten: 0 })));
+      // Reset quantities and comments
+      setProducts(prev => prev.map(p => ({ ...p, quantityBakjes: 0, quantityKisten: 0, comment: "" })));
       
       setTimeout(() => {
         setShowSuccessToast(false);
@@ -629,6 +1131,18 @@ export default function App() {
   const handleApproveUser = async (targetEmail: string) => {
     if (!serverUser) return;
     try {
+      // Direct first
+      try {
+        const matchedUser = userList.find(u => u.email === targetEmail);
+        if (matchedUser) {
+          await updateUserStatusDirect(matchedUser.uid, "approved");
+          await fetchUsersAndAdmins();
+          return;
+        }
+      } catch (directErr) {
+        console.warn("Direct approve failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/users/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -651,6 +1165,18 @@ export default function App() {
   const handleRejectUser = async (targetEmail: string) => {
     if (!serverUser) return;
     try {
+      // Direct first
+      try {
+        const matchedUser = userList.find(u => u.email === targetEmail);
+        if (matchedUser) {
+          await updateUserStatusDirect(matchedUser.uid, "rejected");
+          await fetchUsersAndAdmins();
+          return;
+        }
+      } catch (directErr) {
+        console.warn("Direct reject failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/users/reject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -674,6 +1200,18 @@ export default function App() {
     if (!serverUser) return;
     if (!confirm(`Weet u zeker dat u ${targetEmail} wilt verwijderen uit het register?`)) return;
     try {
+      // Direct first
+      try {
+        const matchedUser = userList.find(u => u.email === targetEmail);
+        if (matchedUser) {
+          await deleteUserDirect(matchedUser.uid);
+          await fetchUsersAndAdmins();
+          return;
+        }
+      } catch (directErr) {
+        console.warn("Direct delete user failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/users/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -699,6 +1237,17 @@ export default function App() {
     setAdminMgmtError(null);
 
     try {
+      // Direct first
+      try {
+        const newEmail = newAdminEmailInput.trim().toLowerCase();
+        await saveAdminDirect(newEmail);
+        setNewAdminEmailInput("");
+        await fetchUsersAndAdmins();
+        return;
+      } catch (directErr) {
+        console.warn("Direct add admin failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/admins/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -728,6 +1277,15 @@ export default function App() {
     if (!confirm(`Weet u zeker dat u ${targetAdmin} wilt verwijderen als beheerder?`)) return;
 
     try {
+      // Direct first
+      try {
+        await deleteAdminDirect(targetAdmin);
+        await fetchUsersAndAdmins();
+        return;
+      } catch (directErr) {
+        console.warn("Direct remove admin failed, falling back to server API:", directErr);
+      }
+
       const res = await fetch("/api/admin/admins/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1156,6 +1714,19 @@ export default function App() {
                           product={p}
                           onChangeQtyBakjes={(qty) => handleProductBakjesChange(p.id, qty)}
                           onChangeQtyKisten={(qty) => handleProductKistenChange(p.id, qty)}
+                          onChangeComment={(comment) => handleProductCommentChange(p.id, comment)}
+                          isStrawberry={p.dbName.toLowerCase().startsWith("aardbeien")}
+                          varietySelected={p.dbName.toLowerCase().includes("groot") ? selectedVarietyGroot : selectedVarietyKlein}
+                          availableVarieties={strawberryVarieties}
+                          onChangeVariety={(variety) => {
+                            if (p.dbName.toLowerCase().includes("groot")) {
+                              setSelectedVarietyGroot(variety);
+                              localStorage.setItem("last_selected_strawberry_variety_groot", variety);
+                            } else {
+                              setSelectedVarietyKlein(variety);
+                              localStorage.setItem("last_selected_strawberry_variety_klein", variety);
+                            }
+                          }}
                         />
                       ))}
                     </div>
@@ -1205,7 +1776,7 @@ export default function App() {
                   </div>
 
                   {/* Settings Grid */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
                     {/* Left block: Prijszetting */}
                     <div className="space-y-4 flex flex-col h-full">
@@ -1215,54 +1786,26 @@ export default function App() {
                       </div>
 
                       <form onSubmit={handleSavePrices} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs flex flex-col justify-between flex-1 min-h-[380px]">
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Groot (per bakje)</label>
-                            <div className="relative mt-1">
-                              <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                required
-                                value={prices["aardbeien groot"] !== undefined ? prices["aardbeien groot"] : ""}
-                                onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien groot": parseFloat(e.target.value) || 0 }))}
-                                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
-                              />
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                          {INITIAL_PRODUCTS.map((p) => (
+                            <div key={p.id}>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">
+                                Basisprijs {p.displayName} (per {p.option2Label.toLowerCase()})
+                              </label>
+                              <div className="relative mt-1">
+                                <span className="absolute left-3.5 top-2 text-xs font-semibold text-slate-400">€</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  required
+                                  value={prices[p.dbName] !== undefined ? prices[p.dbName] : ""}
+                                  onChange={(e) => setPrices(prev => ({ ...prev, [p.dbName]: parseFloat(e.target.value) || 0 }))}
+                                  className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-1.5 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                              </div>
                             </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Aardbeien Klein (per bakje)</label>
-                            <div className="relative mt-1">
-                              <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                required
-                                value={prices["aardbeien klein"] !== undefined ? prices["aardbeien klein"] : ""}
-                                onChange={(e) => setPrices(prev => ({ ...prev, "aardbeien klein": parseFloat(e.target.value) || 0 }))}
-                                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Basisprijs Kerstomaten (per bakje)</label>
-                            <div className="relative mt-1">
-                              <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">€</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                required
-                                value={prices["kerstomaten"] !== undefined ? prices["kerstomaten"] : ""}
-                                onChange={(e) => setPrices(prev => ({ ...prev, "kerstomaten": parseFloat(e.target.value) || 0 }))}
-                                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl py-2 px-8 text-xs text-slate-850 font-mono focus:outline-none focus:border-[#BE123C]"
-                              />
-                            </div>
-                          </div>
+                          ))}
                         </div>
 
                         <div className="pt-4 space-y-3 mt-auto">
@@ -1301,9 +1844,9 @@ export default function App() {
                         <div className="space-y-4">
                           <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-4">
                             
-                            {/* kist aardbeien */}
+                            {/* plateau aardbeien */}
                             <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                              <span className="text-xs font-semibold text-slate-700">1 kist aardbeien =</span>
+                              <span className="text-xs font-semibold text-slate-700">1 plateau aardbeien =</span>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <input
                                   type="number"
@@ -1397,7 +1940,141 @@ export default function App() {
                       </form>
                     </div>
 
+                    {/* Block 4: Strawberry Varieties Management (Aardbeirassen) */}
+                    <div className="space-y-4 flex flex-col h-full">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
+                        <Sparkles className="w-4 h-4 text-[#BE123C]" />
+                        <span>Aardbeirassen Beheer</span>
+                      </div>
+
+                      <div className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs flex flex-col justify-between flex-1 min-h-[380px]">
+                        <div className="space-y-4 flex flex-col flex-1">
+                          
+                          {/* List of current varieties with scrollbar */}
+                          <div className="space-y-2 flex-1 flex flex-col min-h-[140px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Bestaande Rassen</span>
+                            <div className="border border-slate-150 rounded-xl p-2.5 bg-slate-50/55 flex-1 overflow-y-auto max-h-[180px] space-y-1.5 scrollbar-thin">
+                              {strawberryVarieties.map((variety) => (
+                                <div key={variety} className="flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-slate-100 shadow-5xs">
+                                  <span className="text-xs font-bold text-slate-700">{variety}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveVariety(variety)}
+                                    title={`Verwijder ${variety}`}
+                                    className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                              {strawberryVarieties.length === 0 && (
+                                <p className="text-slate-400 text-xs italic text-center py-6">Geen actieve aardbeirassen.</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Add variety form */}
+                          <form onSubmit={handleAddVariety} className="space-y-2 shrink-0 pt-2 border-t border-slate-100/70">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">Nieuw Ras Toevoegen</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                required
+                                value={newVarietyInput}
+                                onChange={(e) => setNewVarietyInput(e.target.value)}
+                                className="flex-1 bg-white border border-slate-300 rounded-lg py-1.5 px-3 text-xs focus:outline-none focus:border-[#BE123C]"
+                                placeholder="Elsanta"
+                              />
+                              <button
+                                type="submit"
+                                className="py-1.5 px-3 rounded-lg bg-[#BE123C] hover:bg-[#9F1239] text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-5xs"
+                              >
+                                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Voeg toe</span>
+                              </button>
+                            </div>
+                          </form>
+
+                        </div>
+
+                        {/* Error and Success states */}
+                        <div className="space-y-2 shrink-0">
+                          {varietiesError && (
+                            <div className="text-[11px] text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-2.5 font-medium leading-normal">
+                              {varietiesError}
+                            </div>
+                          )}
+
+                          {varietiesSuccess && (
+                            <div className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 font-medium flex items-center gap-1.5 leading-normal">
+                              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+                              Aardbeirassen succesvol bijgewerkt!
+                            </div>
+                          )}
+                        </div>
+
+                      </div>
+                    </div>
+
                   </div>
+
+                  {/* Database Migration Section */}
+                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-4xs space-y-4">
+                    <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
+                      <Database className="w-5 h-5 text-[#BE123C]" />
+                      <span>Historische Gegevens Synchroniseren</span>
+                    </div>
+
+                    <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-3">
+                      <p className="text-xs text-slate-650 leading-relaxed">
+                        Sinds de activering van de Cloud Firestore integratie slaat deze applicatie uw ingevoerde gegevens rechtstreeks in de Cloud Database op. 
+                        Met deze tool migreren we automatisch al uw <strong>oude, gesimuleerde records</strong> (die zich momenteel lokaal in het offline bestand <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-rose-600">database.json</code> bevinden) direct naar Firestore.
+                      </p>
+                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[11px] text-amber-900 leading-normal flex gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <span>
+                          <strong>Let op:</strong> Dit synchroniseert de records rechtstreeks vanuit de browser van de beheerder met volledige bevoegdheid. Reeds bestaande records in Firestore worden automatisch overgeslagen om dubbele items te voorkomen.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2">
+                      <div className="text-xs font-mono text-slate-500">
+                        {isMigratingSimulated && migrationProgress && (
+                          <span className="flex items-center gap-2 text-[#BE123C] font-semibold">
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Migreren van record {migrationProgress.current} van {migrationProgress.total}...
+                          </span>
+                        )}
+                        {!isMigratingSimulated && "U kunt deze migratie op elk gewenst moment uitvoeren."}
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isMigratingSimulated}
+                        onClick={handleMigrateSimulatedData}
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-all cursor-pointer font-mono uppercase tracking-wider disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isMigratingSimulated ? "animate-spin" : ""}`} />
+                        <span>{isMigratingSimulated ? "Migreren..." : "Simulatie-geschiedenis Importeren"}</span>
+                      </button>
+                    </div>
+
+                    {/* Feedback messages */}
+                    {migrationError && (
+                      <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3.5 font-medium">
+                        {migrationError}
+                      </div>
+                    )}
+
+                    {migrationSuccess && (
+                      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 font-medium flex items-center gap-1.5">
+                        <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                        {migrationSuccess}
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               )}
 
@@ -1596,6 +2273,8 @@ export default function App() {
         inputDate={new Date().toLocaleDateString("nl-NL")}
         inputTime={new Date().toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}
         products={products}
+        selectedVarietyGroot={selectedVarietyGroot}
+        selectedVarietyKlein={selectedVarietyKlein}
         isSubmitting={isSubmitting}
       />
 

@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net - default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.firebase.sign_in_provider == "password" ||
+        request.auth.token.email.lower() == "wouter.torfss@gmail.com"
+      );
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        request.auth.token.email.lower() == "wouter.torfss@gmail.com" ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
+      );
+    }
+
+    function isApprovedUser() {
+      return isEmailVerified() && (
+        isAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == "approved")
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Admins Collection rules
+    match /admins/{adminEmail} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Users Collection rules
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId && 
+        request.resource.data.uid == userId &&
+        (request.resource.data.status == "pending" || (request.resource.data.status == "approved" && isAdmin()));
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && request.resource.data.status == resource.data.status) || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Records Collection rules
+    match /records/{recordId} {
+      allow read: if isApprovedUser();
+      allow create: if isApprovedUser() && request.resource.data.id == recordId;
+      allow update: if isApprovedUser();
+      allow delete: if isApprovedUser() || isAdmin();
+    }
+
+    // Settings Collection rules
+    match /settings/{settingsDoc} {
+      allow read: if isApprovedUser();
+      allow write: if isAdmin();
+    }
+  }
+}

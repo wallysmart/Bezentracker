@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "RecordRow": {
+      "title": "RecordRow",
+      "description": "A single entry representing stock filled into the vending machine",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the record" },
+        "inputterName": { "type": "string", "description": "Name of the person who put the items in the machine" },
+        "inputDate": { "type": "string", "description": "Date of input in format DD-MM-YYYY" },
+        "inputTime": { "type": "string", "description": "Time of input in format HH:mm" },
+        "productType": { "type": "string", "description": "Product category and container type" },
+        "productQuantity": { "type": "number", "description": "Quantity filled" },
+        "timestamp": { "type": "number", "description": "Unix timestamp in milliseconds" },
+        "userEmail": { "type": "string", "description": "Email address of the user who filled the machine" },
+        "unitPrice": { "type": "number", "description": "Unit price of the product" },
+        "totalPrice": { "type": "number", "description": "Total price of the batch" },
+        "predictedTemperature": { "type": "number", "description": "Predicted max daily temperature in Celsius" }
+      },
+      "required": ["id", "inputterName", "inputDate", "inputTime", "productType", "productQuantity", "timestamp", "userEmail"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "A registered user in the application, subject to approval",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth provider UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "name": { "type": "string", "description": "Display name of the user" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Approval status of the user" },
+        "createdAt": { "type": "number", "description": "Creation timestamp in milliseconds" },
+        "provider": { "type": "string", "enum": ["google", "email"], "description": "Identity provider type" },
+        "passwordHash": { "type": "string", "description": "SHA-256 hash of password for email auth" }
+      },
+      "required": ["uid", "email", "name", "status", "createdAt", "provider"]
+    },
+    "AdminEmail": {
+      "title": "AdminEmail",
+      "description": "An email address that is authorized as administrator",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Admin email address" }
+      },
+      "required": ["email"]
+    },
+    "SettingsPrices": {
+      "title": "SettingsPrices",
+      "description": "Configured baseline prices for fruit types",
+      "type": "object",
+      "properties": {
+        "aardbeien groot": { "type": "number" },
+        "aardbeien klein": { "type": "number" },
+        "kerstomaten": { "type": "number" }
+      }
+    },
+    "SettingsCorrespondences": {
+      "title": "SettingsCorrespondences",
+      "description": "Conversion mappings of crate units and weight metrics",
+      "type": "object",
+      "properties": {
+        "kist_aardbeien_to_bakjes": { "type": "number" },
+        "doos_kerstomaten_to_bakjes": { "type": "number" },
+        "bakje_aardbeien_to_kg": { "type": "number" },
+        "bakje_kerstomaten_to_kg": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/records/{recordId}": {
+      "schema": "RecordRow",
+      "description": "Vending machine inventory logs"
+    },
+    "/users/{userId}": {
+      "schema": "AppUser",
+      "description": "App users registry and permissions"
+    },
+    "/admins/{adminEmail}": {
+      "schema": "AdminEmail",
+      "description": "Administrator emails list"
+    },
+    "/settings/prices": {
+      "schema": "SettingsPrices",
+      "description": "Vending machine price settings"
+    },
+    "/settings/correspondences": {
+      "schema": "SettingsCorrespondences",
+      "description": "Vending machine volume conversion settings"
+    }
+  }
+}
