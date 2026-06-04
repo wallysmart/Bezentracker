@@ -1,5 +1,5 @@
 {
-  "name": "Automaat Vuller App",
+  "name": "BezenTracker",
   "description": "Mobiele app voor het registreren van de gevulde producten (aardbeien groot, aardbeien klein, kerstomaten) in verkoopautomaten met ondersteuning voor database opslag en CSV-export.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

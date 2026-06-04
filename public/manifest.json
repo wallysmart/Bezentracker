@@ -1,15 +1,10 @@
 {
-  "short_name": "Automaat Vuller",
-  "name": "Verkoopautomaat Product Registratie",
+  "short_name": "BezenTracker",
+  "name": "BezenTracker",
   "description": "Mobiele app voor vullers om verkoopautomaten bij te houden",
   "icons": [
     {
-      "src": "icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "icon-512.png",
+      "src": "strawberry_icon.png",
       "type": "image/png",
       "sizes": "512x512"
     }

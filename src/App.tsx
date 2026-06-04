@@ -1833,113 +1833,6 @@ export default function App() {
                       </form>
                     </div>
 
-                    {/* Right block: Volume Correspondenties */}
-                    <div className="space-y-4 flex flex-col h-full">
-                      <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
-                        <Scale className="w-4 h-4 text-rose-650" />
-                        <span>Volume Correspondenties</span>
-                      </div>
-
-                      <form onSubmit={handleSaveCorrespondences} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs flex flex-col justify-between flex-1 min-h-[380px]">
-                        <div className="space-y-4">
-                          <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-4">
-                            
-                            {/* plateau aardbeien */}
-                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                              <span className="text-xs font-semibold text-slate-700">1 plateau aardbeien =</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  required
-                                  value={correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : ""}
-                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "kist_aardbeien_to_bakjes": parseFloat(e.target.value) || 0 }))}
-                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                                />
-                                <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
-                              </div>
-                            </div>
-
-                            {/* doos kerstomaatjes */}
-                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                              <span className="text-xs font-semibold text-slate-700">1 doos kerstomaatjes =</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  required
-                                  value={correspondences["doos_kerstomaten_to_bakjes"] !== undefined ? correspondences["doos_kerstomaten_to_bakjes"] : ""}
-                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "doos_kerstomaten_to_bakjes": parseFloat(e.target.value) || 0 }))}
-                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                                />
-                                <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
-                              </div>
-                            </div>
-
-                            {/* bakje aardbeien kg */}
-                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
-                              <span className="text-xs font-semibold text-slate-700">1 bakje aardbeien =</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  required
-                                  value={correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : ""}
-                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_aardbeien_to_kg": parseFloat(e.target.value) || 0 }))}
-                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                                />
-                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
-                              </div>
-                            </div>
-
-                            {/* bakje kerstomaatjes kg */}
-                            <div className="flex items-center justify-between gap-4 py-1.5">
-                              <span className="text-xs font-semibold text-slate-700">1 bakje kerstomaatjes =</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  required
-                                  value={correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : ""}
-                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
-                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
-                                />
-                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
-                              </div>
-                            </div>
-
-                          </div>
-                        </div>
-
-                        <div className="pt-4 space-y-3 mt-auto">
-                          {correspondencesError && (
-                            <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-medium">
-                              {correspondencesError}
-                            </div>
-                          )}
-
-                          {correspondencesSuccess && (
-                            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
-                              <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
-                              Correspondenties succesvol opgeslagen!
-                            </div>
-                          )}
-
-                          <button
-                            type="submit"
-                            disabled={isSavingCorrespondences}
-                            className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
-                          >
-                            {isSavingCorrespondences ? "Opslaan..." : "Conversies Opslaan"}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-
                     {/* Block 4: Strawberry Varieties Management (Aardbeirassen) */}
                     <div className="space-y-4 flex flex-col h-full">
                       <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
@@ -2016,64 +1909,99 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Right block: Volume Correspondenties */}
+                    <div className="space-y-4 flex flex-col h-full">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
+                        <Scale className="w-4 h-4 text-rose-650" />
+                        <span>Volume Correspondenties</span>
+                      </div>
+
+                      <form onSubmit={handleSaveCorrespondences} className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-4xs flex flex-col justify-between flex-1 min-h-[380px]">
+                        <div className="space-y-4">
+                          <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-4">
+                            
+                            {/* plateau aardbeien */}
+                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                              <span className="text-xs font-semibold text-slate-700">1 plateau aardbeien =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  required
+                                  value={correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "kist_aardbeien_to_bakjes": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">bakjes</span>
+                              </div>
+                            </div>
+
+                            {/* bakje aardbeien kg */}
+                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                              <span className="text-xs font-semibold text-slate-700">1 bakje aardbeien =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  required
+                                  value={correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_aardbeien_to_kg": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                              </div>
+                            </div>
+
+                            {/* bakje kerstomaatjes kg */}
+                            <div className="flex items-center justify-between gap-4 py-1.5">
+                              <span className="text-xs font-semibold text-slate-700">1 bakje kerstomaatjes =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  required
+                                  value={correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+
+                        <div className="pt-4 space-y-3 mt-auto">
+                          {correspondencesError && (
+                            <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3 font-medium">
+                              {correspondencesError}
+                            </div>
+                          )}
+
+                          {correspondencesSuccess && (
+                            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3 font-medium flex items-center gap-1.5">
+                              <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                              Correspondenties succesvol opgeslagen!
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isSavingCorrespondences}
+                            className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-40 font-mono uppercase tracking-wider"
+                          >
+                            {isSavingCorrespondences ? "Opslaan..." : "Conversies Opslaan"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
                   </div>
 
-                  {/* Database Migration Section */}
-                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-4xs space-y-4">
-                    <div className="flex items-center gap-2 font-bold text-slate-700 text-xs sm:text-sm font-mono uppercase tracking-wider">
-                      <Database className="w-5 h-5 text-[#BE123C]" />
-                      <span>Historische Gegevens Synchroniseren</span>
-                    </div>
 
-                    <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-slate-150 space-y-3">
-                      <p className="text-xs text-slate-650 leading-relaxed">
-                        Sinds de activering van de Cloud Firestore integratie slaat deze applicatie uw ingevoerde gegevens rechtstreeks in de Cloud Database op. 
-                        Met deze tool migreren we automatisch al uw <strong>oude, gesimuleerde records</strong> (die zich momenteel lokaal in het offline bestand <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-rose-600">database.json</code> bevinden) direct naar Firestore.
-                      </p>
-                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[11px] text-amber-900 leading-normal flex gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                        <span>
-                          <strong>Let op:</strong> Dit synchroniseert de records rechtstreeks vanuit de browser van de beheerder met volledige bevoegdheid. Reeds bestaande records in Firestore worden automatisch overgeslagen om dubbele items te voorkomen.
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2">
-                      <div className="text-xs font-mono text-slate-500">
-                        {isMigratingSimulated && migrationProgress && (
-                          <span className="flex items-center gap-2 text-[#BE123C] font-semibold">
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Migreren van record {migrationProgress.current} van {migrationProgress.total}...
-                          </span>
-                        )}
-                        {!isMigratingSimulated && "U kunt deze migratie op elk gewenst moment uitvoeren."}
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isMigratingSimulated}
-                        onClick={handleMigrateSimulatedData}
-                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-all cursor-pointer font-mono uppercase tracking-wider disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${isMigratingSimulated ? "animate-spin" : ""}`} />
-                        <span>{isMigratingSimulated ? "Migreren..." : "Simulatie-geschiedenis Importeren"}</span>
-                      </button>
-                    </div>
-
-                    {/* Feedback messages */}
-                    {migrationError && (
-                      <div className="text-xs text-[#BE123C] bg-rose-50 border border-rose-100 rounded-xl p-3.5 font-medium">
-                        {migrationError}
-                      </div>
-                    )}
-
-                    {migrationSuccess && (
-                      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 font-medium flex items-center gap-1.5">
-                        <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
-                        {migrationSuccess}
-                      </div>
-                    )}
-                  </div>
 
                 </div>
               )}
