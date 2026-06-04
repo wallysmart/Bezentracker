@@ -86,9 +86,9 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
 
   const [correspondences, setCorrespondences] = useState<Record<string, number>>({
     "kist_aardbeien_to_bakjes": 10.0,
-    "doos_kerstomaten_to_bakjes": 10.0,
     "bakje_aardbeien_to_kg": 0.5,
-    "bakje_kerstomaten_to_kg": 0.5
+    "potje_kerstomaten_to_kg": 0.5,
+    "bakje_san_marzano_to_kg": 0.3
   });
 
   // View state: "dashboard" (graph) or "database" (table)
@@ -235,9 +235,18 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
     const link = document.createElement("a");
     link.setAttribute("href", url);
     
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const seconds = String(now.getSeconds()).padStart(2, "0");
+    const timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+
     const filename = type === "recent"
-      ? "verkoopautomaat_recent_export.csv"
-      : "verkoopautomaat_volledige_export.csv";
+      ? `verkoopautomaat_recent_export_${timestamp}.csv`
+      : `verkoopautomaat_volledige_export_${timestamp}.csv`;
       
     link.setAttribute("download", filename);
     link.style.visibility = "hidden";
@@ -346,7 +355,14 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
       try {
         const directCorr = await getCorrespondencesDirect();
         if (directCorr) {
-          setCorrespondences(directCorr);
+          const migratedCorr = { ...directCorr };
+          if (migratedCorr["bakje_kerstomaten_to_kg"] !== undefined && migratedCorr["potje_kerstomaten_to_kg"] === undefined) {
+            migratedCorr["potje_kerstomaten_to_kg"] = migratedCorr["bakje_kerstomaten_to_kg"];
+          }
+          if (migratedCorr["bakje_san_marzano_to_kg"] === undefined) {
+            migratedCorr["bakje_san_marzano_to_kg"] = 0.3;
+          }
+          setCorrespondences(migratedCorr);
           return;
         }
       } catch (directErr) {
@@ -356,7 +372,16 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
       fetch("/api/correspondences")
         .then(res => res.ok ? res.json() : null)
         .then(data => {
-          if (data) setCorrespondences(data);
+          if (data) {
+            const migratedCorr = { ...data };
+            if (migratedCorr["bakje_kerstomaten_to_kg"] !== undefined && migratedCorr["potje_kerstomaten_to_kg"] === undefined) {
+              migratedCorr["potje_kerstomaten_to_kg"] = migratedCorr["bakje_kerstomaten_to_kg"];
+            }
+            if (migratedCorr["bakje_san_marzano_to_kg"] === undefined) {
+              migratedCorr["bakje_san_marzano_to_kg"] = 0.3;
+            }
+            setCorrespondences(migratedCorr);
+          }
         })
         .catch(e => console.error("Fout bij ophalen van correspondenties:", e));
     };
@@ -583,9 +608,17 @@ export default function ProductOverview({ serverUser }: ProductOverviewProps) {
         
         let weightFactor = 0.5;
         const kistToBakjes = correspondences["kist_aardbeien_to_bakjes"] !== undefined ? correspondences["kist_aardbeien_to_bakjes"] : 10.0;
-        const bakjeToKg = correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : 0.5;
         
-        weightFactor = isBulk ? (kistToBakjes * bakjeToKg) : bakjeToKg;
+        let unitToKg = 0.5;
+        if (chartProduct.toLowerCase().includes("marzano")) {
+          unitToKg = correspondences["bakje_san_marzano_to_kg"] !== undefined ? correspondences["bakje_san_marzano_to_kg"] : 0.3;
+        } else if (chartProduct.toLowerCase().includes("tomaat") || chartProduct.toLowerCase().includes("snoep")) {
+          unitToKg = correspondences["potje_kerstomaten_to_kg"] !== undefined ? correspondences["potje_kerstomaten_to_kg"] : (correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : 0.5);
+        } else {
+          unitToKg = correspondences["bakje_aardbeien_to_kg"] !== undefined ? correspondences["bakje_aardbeien_to_kg"] : 0.5;
+        }
+        
+        weightFactor = isBulk ? (kistToBakjes * unitToKg) : unitToKg;
 
         existing.total += (Number(r.productQuantity) || 0) * weightFactor;
       }

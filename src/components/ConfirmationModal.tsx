@@ -29,158 +29,139 @@ export default function ConfirmationModal({
 }: ConfirmationModalProps) {
   const totalBakjes = products.reduce((acc, p) => acc + p.quantityBakjes, 0);
   const totalPlateaus = products.reduce((acc, p) => acc + p.quantityKisten, 0);
-  const hasAnyInput = totalBakjes > 0 || totalPlateaus > 0;
+  const filledProducts = products.filter(p => p.quantityBakjes > 0 || p.quantityKisten > 0);
+  const hasAnyInput = filledProducts.length > 0;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
           {/* Glass background overlay */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
           />
 
           {/* Dialog container */}
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 15 }}
+            initial={{ scale: 0.96, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 15 }}
-            transition={{ type: "spring", duration: 0.4 }}
-            className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden relative border border-slate-100/90 z-10 flex flex-col"
+            exit={{ scale: 0.96, opacity: 0, y: 10 }}
+            transition={{ type: "spring", duration: 0.3 }}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden relative border border-slate-100 z-10 flex flex-col max-h-[90vh]"
           >
             {/* Header / Accent Top */}
-            <div className="bg-[#BE123C] text-white p-6 relative">
-              <div className="absolute right-4 top-4 text-rose-950 opacity-25">
-                <ShieldCheck className="w-24 h-24 stroke-[1]" />
+            <div className="bg-[#BE123C] text-white px-4.5 py-3.5 relative shrink-0">
+              <div className="absolute right-3 top-2.5 text-rose-950 opacity-15">
+                <ShieldCheck className="w-16 h-16 stroke-[1]" />
               </div>
-              <p className="text-xs uppercase tracking-wider font-bold text-rose-200/90 font-mono">
-                Bevestiging Vereist
+              <p className="text-[10px] uppercase tracking-wider font-bold text-rose-200/90 font-mono">
+                Bevestiging
               </p>
-              <h3 className="text-2xl font-display font-medium mt-1">
+              <h3 className="text-base sm:text-lg font-bold mt-0.5">
                 Kloppen deze gegevens?
               </h3>
-              <p className="text-sm text-rose-100/90 mt-1">
-                Controleer de ingevoerde hoeveelheden voordat ze naar de database worden verzonden.
-              </p>
             </div>
 
             {/* General Info Metadata Summary */}
-            <div className="p-6 space-y-5 flex-1">
-              <div className="bg-slate-50 border border-slate-100/80 p-4 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2.5 text-slate-600 text-sm">
-                  <User className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="font-semibold text-slate-700">Invoerder:</span>
-                  <span className="ml-auto bg-slate-200/50 text-slate-800 px-2.5 py-0.5 rounded-lg text-xs font-semibold">
-                    {inputterName || "Onbekend"}
-                  </span>
+            <div className="p-4 space-y-3.5 overflow-y-auto flex-1 min-h-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-xs text-slate-650 font-mono">
+                <div className="flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-450 shrink-0" />
+                  <span className="font-semibold text-slate-800">{inputterName || "Onbekend"}</span>
                 </div>
                 
-                <div className="flex items-center gap-2.5 text-slate-600 text-sm">
-                  <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="font-medium">Invoerdatum:</span>
-                  <span className="ml-auto font-mono text-slate-700 font-medium">
-                    {inputDate}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-slate-600 text-sm">
-                  <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="font-medium">Invoertijd:</span>
-                  <span className="ml-auto font-mono text-slate-700 font-medium">
-                    {inputTime}
-                  </span>
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{inputDate} ({inputTime})</span>
                 </div>
               </div>
 
               {/* Product Quantities List */}
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
-                  Gevulde Hoeveelheden
+              <div className="space-y-1.5">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                  Gevulde Producten
                 </h4>
-                <div className="divide-y divide-slate-100 bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-inner">
-                  {products.map((p) => {
-                    const defaultUnit = p.option2Label;
-                    const hasInput = p.quantityBakjes > 0 || p.quantityKisten > 0;
-                    const isStrawberry = p.dbName.toLowerCase().startsWith("aardbeien");
-                    const variety = p.dbName.toLowerCase().includes("groot") ? selectedVarietyGroot : selectedVarietyKlein;
+                
+                {!hasAnyInput ? (
+                  <div className="p-4 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-400">
+                    Geen invoergegevens ingevoerd
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 bg-white border border-slate-100 rounded-xl overflow-hidden shadow-2xs">
+                    {filledProducts.map((p) => {
+                      const defaultUnit = p.option2Label;
+                      const isStrawberry = p.dbName.toLowerCase().startsWith("aardbeien");
+                      const variety = p.dbName.toLowerCase().includes("groot") ? selectedVarietyGroot : selectedVarietyKlein;
 
-                    return (
-                      <div 
-                        key={p.id} 
-                        className="flex flex-col p-3.5 hover:bg-slate-55/40 transition-colors gap-1.5"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-xl shrink-0">{p.icon}</span>
-                            <div className="flex flex-col">
-                              <span className="font-display font-semibold text-[#BE123C] text-sm leading-tight">
-                                {p.displayName}
-                              </span>
-                              {isStrawberry && hasInput && (
-                                <span className="text-[10px] bg-rose-50 border border-rose-100 text-rose-700 px-1.5 py-0.5 rounded-md font-medium mt-0.5 w-max">
-                                  Ras: <span className="font-bold">{variety}</span>
+                      return (
+                        <div 
+                          key={p.id} 
+                          className="flex flex-col p-2.5 hover:bg-slate-50/60 transition-colors gap-1"
+                        >
+                          <div className="flex items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-base shrink-0">{p.icon}</span>
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-semibold text-slate-800 text-xs truncate">
+                                  {p.displayName}
                                 </span>
-                              )}
+                                {isStrawberry && (
+                                  <span className="text-[9px] text-[#BE123C] font-semibold">
+                                    Ras: <span className="bg-rose-50 border border-rose-100 px-1 py-0.2 rounded font-mono">{variety}</span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          {!hasInput && (
-                            <span className="text-xs text-slate-350 font-mono">
-                              Geen invoer
-                            </span>
-                          )}
-                        </div>
 
-                        {hasInput && (
-                          <div className="space-y-1.5 pl-9">
-                            <div className="flex flex-wrap gap-2 justify-end">
+                            {/* Quantities Badges */}
+                            <div className="flex items-center gap-1.5 shrink-0">
                               {p.quantityBakjes > 0 && (
-                                <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-rose-50 text-[#BE123C] border border-[#BE123C]/20 flex items-center gap-1">
-                                  {p.quantityBakjes} <span className="text-[10px] font-normal lowercase">{defaultUnit}</span>
+                                <span className="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-rose-50 text-[#BE123C] border border-[#BE123C]/20 flex items-center gap-0.5">
+                                  {p.quantityBakjes}<span className="text-[8px] font-normal font-sans lowercase">{defaultUnit}</span>
                                 </span>
                               )}
                               {p.option1Label && p.quantityKisten > 0 && (
-                                <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-500/25 flex items-center gap-1">
-                                  {p.quantityKisten} <span className="text-[10px] font-normal lowercase">{p.option1Label}</span>
+                                <span className="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-500/25 flex items-center gap-0.5">
+                                  {p.quantityKisten}<span className="text-[8px] font-normal font-sans lowercase">{p.option1Label}</span>
                                 </span>
                               )}
                             </div>
-
-                            {p.comment && (
-                              <div className="text-[10px] bg-slate-50 border border-slate-150 rounded-lg px-2 py-1.5 text-slate-600 flex items-start gap-1 font-sans italic leading-normal">
-                                <span className="font-semibold text-slate-400 not-italic uppercase tracking-wider text-[8px] mt-0.5 shrink-0">Opmerking:</span>
-                                <span>"{p.comment}"</span>
-                              </div>
-                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+
+                          {p.comment && (
+                            <div className="text-[9px] bg-slate-50 border border-slate-100 rounded-md px-2 py-1 text-slate-500 italic mt-0.5">
+                              "{p.comment}"
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Total Summary Row */}
-              <div className="flex flex-col gap-1 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between px-2 text-sm text-slate-500 font-semibold">
-                  <span>Totaal invoer:</span>
-                  <span className="font-medium text-slate-800 font-mono text-xs xs:text-sm">
-                    {totalBakjes} beker(s)/bakje(s) & {totalPlateaus} plateau(s)
+              {hasAnyInput && (
+                <div className="pt-2 px-1 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
+                  <span>Totale invoer:</span>
+                  <span className="font-bold text-slate-800 font-mono text-[11px]">
+                    {totalBakjes} {totalBakjes === 1 ? "bakje" : "bakjes"}{totalPlateaus > 0 ? ` & ${totalPlateaus} ${totalPlateaus === 1 ? "plateau" : "plateaus"}` : ""}
                   </span>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Footer Buttons */}
-            <div className="p-6 bg-slate-50/80 border-t border-slate-100 flex gap-3.5">
+            <div className="p-3.5 bg-slate-50/80 border-t border-slate-100 flex gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="flex-1 py-3 px-4 rounded-xl border border-slate-200 bg-white text-slate-500 font-medium hover:bg-slate-50 cursor-pointer hover:text-slate-800 active:scale-98 transition-all duration-200 text-sm disabled:opacity-50"
+                className="flex-1 py-2 px-3 rounded-lg border border-slate-200 bg-white text-slate-500 font-medium hover:bg-slate-50 cursor-pointer text-xs active:scale-97 transition-all duration-150"
                 id="btn-confirm-cancel"
               >
                 Aanpassen
@@ -190,18 +171,18 @@ export default function ConfirmationModal({
                 type="button"
                 onClick={onConfirm}
                 disabled={isSubmitting || !hasAnyInput}
-                className="flex-[1.5] py-3 px-4 rounded-xl bg-[#BE123C] text-white font-medium hover:bg-[#9F1239] flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-rose-600/10 active:scale-98 transition-all duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                className="flex-[1.4] py-2 px-3 rounded-lg bg-[#BE123C] text-white font-semibold hover:bg-[#9F1239] flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-97 transition-all duration-150 text-xs disabled:opacity-40"
                 id="btn-confirm-submit"
               >
                 {isSubmitting ? (
-                  <span className="flex items-center gap-1">
-                    <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                     Opslaan...
                   </span>
                 ) : (
                   <>
-                    <Check className="w-4 h-4 stroke-[2.5]" />
-                    Opslaan in database
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    Opslaan
                   </>
                 )}
               </button>

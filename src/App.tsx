@@ -220,9 +220,9 @@ export default function App() {
 
   const [correspondences, setCorrespondences] = useState<Record<string, number>>({
     "kist_aardbeien_to_bakjes": 10.0,
-    "doos_kerstomaten_to_bakjes": 10.0,
     "bakje_aardbeien_to_kg": 0.5,
-    "bakje_kerstomaten_to_kg": 0.5
+    "potje_kerstomaten_to_kg": 0.5,
+    "bakje_san_marzano_to_kg": 0.3
   });
   const [isSavingCorrespondences, setIsSavingCorrespondences] = useState(false);
   const [correspondencesError, setCorrespondencesError] = useState<string | null>(null);
@@ -433,7 +433,14 @@ export default function App() {
         }
         if (directPrices && directCorr) {
           setPrices(directPrices);
-          setCorrespondences(directCorr);
+          const migratedCorr = { ...directCorr };
+          if (migratedCorr["bakje_kerstomaten_to_kg"] !== undefined && migratedCorr["potje_kerstomaten_to_kg"] === undefined) {
+            migratedCorr["potje_kerstomaten_to_kg"] = migratedCorr["bakje_kerstomaten_to_kg"];
+          }
+          if (migratedCorr["bakje_san_marzano_to_kg"] === undefined) {
+            migratedCorr["bakje_san_marzano_to_kg"] = 0.3;
+          }
+          setCorrespondences(migratedCorr);
           return; // Success!
         }
       } catch (directErr) {
@@ -448,7 +455,14 @@ export default function App() {
       const resC = await fetch("/api/correspondences");
       if (resC.ok) {
         const cData = await resC.json();
-        setCorrespondences(cData);
+        const migratedCorr = { ...cData };
+        if (migratedCorr["bakje_kerstomaten_to_kg"] !== undefined && migratedCorr["potje_kerstomaten_to_kg"] === undefined) {
+          migratedCorr["potje_kerstomaten_to_kg"] = migratedCorr["bakje_kerstomaten_to_kg"];
+        }
+        if (migratedCorr["bakje_san_marzano_to_kg"] === undefined) {
+          migratedCorr["bakje_san_marzano_to_kg"] = 0.3;
+        }
+        setCorrespondences(migratedCorr);
       }
     } catch (e) {
       console.error("Fout bij ophalen van prijzen of volume-correspondenties:", e);
@@ -1015,9 +1029,14 @@ export default function App() {
           const multiplier = isBulk ? (Number(correspondenceConfig["kist_aardbeien_to_bakjes"]) || 10.0) : 1.0;
           const eenheden = (Number(item.productQuantity) || 0) * multiplier;
 
-          const bakjeToKg = baseProductLower.includes("tomaat") || baseProductLower.includes("marzano") || baseProductLower.includes("snoep")
-            ? (Number(correspondenceConfig["bakje_kerstomaten_to_kg"]) || 0.5)
-            : (Number(correspondenceConfig["bakje_aardbeien_to_kg"]) || 0.5);
+          let bakjeToKg = 0.5;
+          if (baseProductLower.includes("marzano")) {
+            bakjeToKg = Number(correspondenceConfig["bakje_san_marzano_to_kg"]) || 0.3;
+          } else if (baseProductLower.includes("tomaat") || baseProductLower.includes("snoep")) {
+            bakjeToKg = Number(correspondenceConfig["potje_kerstomaten_to_kg"]) || Number(correspondenceConfig["bakje_kerstomaten_to_kg"]) || 0.5;
+          } else {
+            bakjeToKg = Number(correspondenceConfig["bakje_aardbeien_to_kg"]) || 0.5;
+          }
           const gewicht = Math.round(eenheden * bakjeToKg * 100) / 100;
 
           const prijsPerKg = Math.round((basePrice / bakjeToKg) * 100) / 100;
@@ -1954,17 +1973,34 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* bakje kerstomaatjes kg */}
-                            <div className="flex items-center justify-between gap-4 py-1.5">
-                              <span className="text-xs font-semibold text-slate-700">1 bakje kerstomaatjes =</span>
+                            {/* potje kerstomaten kg */}
+                            <div className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-200/50">
+                              <span className="text-xs font-semibold text-slate-700">1 potje kerstomaten =</span>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <input
                                   type="number"
                                   step="0.01"
                                   min="0"
                                   required
-                                  value={correspondences["bakje_kerstomaten_to_kg"] !== undefined ? correspondences["bakje_kerstomaten_to_kg"] : ""}
-                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
+                                  value={correspondences["potje_kerstomaten_to_kg"] !== undefined ? correspondences["potje_kerstomaten_to_kg"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "potje_kerstomaten_to_kg": parseFloat(e.target.value) || 0 }))}
+                                  className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
+                                />
+                                <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
+                              </div>
+                            </div>
+
+                            {/* bakje San Marzano kg */}
+                            <div className="flex items-center justify-between gap-4 py-1.5">
+                              <span className="text-xs font-semibold text-slate-700">1 bakje San Marzano =</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  required
+                                  value={correspondences["bakje_san_marzano_to_kg"] !== undefined ? correspondences["bakje_san_marzano_to_kg"] : ""}
+                                  onChange={(e) => setCorrespondences(prev => ({ ...prev, "bakje_san_marzano_to_kg": parseFloat(e.target.value) || 0 }))}
                                   className="w-16 bg-white border border-slate-300 rounded-lg py-1 px-2 text-center text-xs font-bold font-mono focus:outline-none focus:border-[#BE123C]"
                                 />
                                 <span className="text-xs text-slate-500 font-medium font-mono">kg</span>
